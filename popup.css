@@ -381,6 +381,60 @@ select {
   transform-origin: 50% 50%;
 }
 
+.hub-btn-primary {
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(16, 163, 127, 0.3);
+  width: 100%;
+}
+
+.hub-btn-primary:hover {
+  filter: brightness(1.15);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(16, 163, 127, 0.5);
+}
+
+.hub-btn-primary:active {
+  transform: translateY(0);
+}
+
+.secondary-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.success-icon {
+  width: 72px;
+  height: 72px;
+  background: radial-gradient(circle at center, rgba(16, 163, 127, 0.2), transparent);
+  color: var(--primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  box-shadow: 0 0 32px rgba(16, 163, 127, 0.2);
+}
+
 .ring-text {
   position: absolute;
   top: 50%;
@@ -390,7 +444,6 @@ select {
   font-weight: 700;
 }
 
-/* Stats */
 .stats-grid {
   display: flex;
   justify-content: space-around;
@@ -404,7 +457,6 @@ select {
 .stat small { display: block; font-size: 9px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 2px; }
 .stat b { font-size: 15px; font-weight: 700; }
 
-/* Log */
 .log-container {
   height: 80px;
   background: #050505;
@@ -414,29 +466,10 @@ select {
 }
 
 .log-content {
-  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-family: 'SF Mono', monospace;
   font-size: 10px;
   color: #555;
   white-space: pre-wrap;
   height: 100%;
   overflow-y: auto;
-}
-
-/* Success */
-.success-icon {
-  width: 64px;
-  height: 64px;
-  background: rgba(16, 163, 127, 0.15);
-  color: var(--primary);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto;
-}
-
-.notice {
-  font-size: 10px;
-  color: var(--text-dim);
-  text-align: center;
 }

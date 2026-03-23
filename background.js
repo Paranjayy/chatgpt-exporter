@@ -428,24 +428,29 @@ async function getTokenFromTab() {
 }
 
 async function fetchConversationList(token, options) {
-   let path = '/conversations?offset=0&limit=100&order=updated';
-   
-   if (options.scope === 'project' && options.projectId) {
-     const pid = options.projectId;
-     if (pid.startsWith('g-p-')) {
-       path = `/conversations?offset=0&limit=100&order=updated&category=gizmo&gizmo_id=${pid}`;
-     } else {
-       path += `&workspace_id=${pid}`;
-     }
-   }
-   
-   try {
-     const res = await chatgptFetch(path, token);
-     return res?.items || [];
-   } catch(e) {
-     console.error('Fetch Error:', e);
-     return [];
-   }
+  let path = '/conversations?offset=0&limit=100&order=updated';
+  const pid = options.projectId;
+  
+  if (options.scope === 'project' && pid) {
+    if (pid.startsWith('g-p-')) {
+      path = `/conversations?offset=0&limit=100&order=updated&category=gizmo&gizmo_id=${pid}`;
+    } else {
+      path += `&workspace_id=${pid}`;
+    }
+    
+    try {
+      const res = await chatgptFetch(path, token);
+      if (res?.items?.length > 0) return res.items;
+      // Fallback: If 0 returned, maybe it's not a workspace/gizmo but needs different ID
+      console.log('Project fetch returned 0, trying with workspace_id fallback...');
+      const fallbackPath = `/conversations?offset=0&limit=100&order=updated&workspace_id=${pid}`;
+      const res2 = await chatgptFetch(fallbackPath, token);
+      if (res2?.items) return res2.items;
+    } catch(e) { console.error('Project path fail:', e); }
+  }
+
+  const res = await chatgptFetch('/conversations?offset=0&limit=100&order=updated', token);
+  return res?.items || [];
 }
 
 async function chatgptFetch(path, token) {
