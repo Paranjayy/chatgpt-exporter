@@ -153,7 +153,7 @@ async function getGeminiChatFromTab(tabId) {
         if (!chrome.runtime.lastError && resp?.messages) {
           const chat = { 
               id: 'gemini-'+Date.now(), 
-              title: 'Google Gemini', 
+              title: resp.title || 'Google Gemini', 
               mapping: resp.messages.map((m,i)=>({ id:i, message:{ author:{ role:m.role }, content:{ parts:[m.text], images:m.images||[] }, create_time:m.created }})) 
           };
           return resolve(chat);
@@ -171,7 +171,7 @@ async function getClaudeChatFromTab(tabId) {
           if (!chrome.runtime.lastError && resp?.messages) {
             const chat = { 
                 id: 'claude-'+Date.now(), 
-                title: 'Claude AI', 
+                title: resp.title || 'Claude AI', 
                 mapping: resp.messages.map((m,i)=>({ id:i, message:{ author:{ role:m.role }, content:{ parts:[m.text], images:m.images||[] }, create_time:m.created }})) 
             };
             return resolve(chat);

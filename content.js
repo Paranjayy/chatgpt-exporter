@@ -181,6 +181,81 @@
     }, 2000);
   }
 
+  function scrapeGemini() {
+    const messages = [];
+    const now = Date.now() / 1000;
+    const titleEl = document.querySelector('[aria-label="Rename conversation"]') || document.querySelector('h1') || { innerText: document.title };
+    const title = titleEl.innerText.replace(' - Gemini', '').trim();
+    
+    const items = document.querySelectorAll('.query-text, .user-query, .message-content, .model-response-text, .inline-answer, [role="article"], .prompt-content, .response-content');
+    
+    items.forEach((el, idx) => {
+      const text = el.innerText.trim();
+      if (text.length < 2 || text.includes('Where should we start?')) return;
+
+      const isUser = el.classList.contains('query-text') || 
+                     el.classList.contains('user-query') ||
+                     el.classList.contains('prompt-content') ||
+                     el.closest('.query-text') ||
+                     el.closest('.user-query') ||
+                     el.matches('[aria-label*="user"]') ||
+                     el.closest('[aria-label*="user"]');
+
+      if (isUser || text.length > 1) {
+         messages.push({
+           role: isUser ? 'user' : 'assistant',
+           text,
+           images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
+           created: now + (idx * 0.01)
+         });
+      }
+    });
+    return { title, messages };
+  }
+
+  function scrapeClaude() {
+    const messages = [];
+    const now = Date.now() / 1000;
+    
+    // Title usually in the top bar center
+    const titleEl = document.querySelector('div.flex.items-center.gap-1 h1, .font-claude-message-title, h1');
+    const title = (titleEl ? titleEl.innerText : document.title).replace(' - Claude', '').trim();
+
+    // Claude messages are often in bubbles with bg-bg-200/300 (User) or font-claude-message (Assistant)
+    // We also look for the grid container which usually holds message blocks
+    const items = document.querySelectorAll('.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .message-content, .bg-bg-200, .bg-bg-300');
+    
+    items.forEach((el, idx) => {
+      const text = el.innerText.trim();
+      if (text.length < 1) return;
+
+      const isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.matches('.bg-bg-200, .bg-bg-300');
+      // On Claude, if it's not a user bubble, it's almost certainly the AI output
+      const isAssistant = el.closest('.font-claude-message') || el.matches('.font-claude-message') || (!isUser && text.length > 5);
+
+      if (isUser || isAssistant) {
+         messages.push({
+           role: isUser ? 'user' : 'assistant',
+           text,
+           images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
+           created: now + (idx * 0.01)
+         });
+      }
+    });
+
+    // Deduplicate: Claude React DOM sometimes has nested structures that double-count text
+    const final = [];
+    const seen = new Set();
+    messages.forEach(m => {
+       const key = m.role + m.text.slice(0, 100);
+       if (!seen.has(key)) {
+         final.push(m);
+         seen.add(key);
+       }
+    });
+    return { title, messages: final };
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'GET_TOKEN') {
       sendResponse({ token: getAccessToken() });
@@ -195,121 +270,46 @@
           if (node.shadowRoot) {
             results.push(...deepQuerySelectorAll(selector, node.shadowRoot));
           }
-          for (const child of node.children) {
-            pushResults(child);
-          }
+          for (const child of node.children) pushResults(child);
         };
         pushResults(root === document ? document.body : root);
         return results;
       };
 
       if (location.hostname.includes('chatgpt.com')) {
-          const dom = getProjectsFromDOM();
-          const current = getCurrentProjectFromURL();
-          [...dom, ...(current ? [current] : [])].forEach(p => { map[p.id] = p; });
+          getProjectsFromDOM().forEach(p => { map[p.id] = p; });
+          const cur = getCurrentProjectFromURL();
+          if (cur) map[cur.id] = cur;
       } else if (location.hostname.includes('gemini.google.com')) {
-          const links = deepQuerySelectorAll('a[data-test-id="conversation"], a[href*="/app/"]');
+          const links = deepQuerySelectorAll('a[href*="/app/"]');
           links.forEach(a => {
-            const href = a.getAttribute('href') || '';
-            const match = href.match(/\/app\/([a-z0-9]+)/);
+            const match = (a.getAttribute('href')||'').match(/\/app\/([a-z0-9]+)/);
             if (match) {
               const id = match[1];
-              const titleEl = a.querySelector('[class*="title"], .conversation-title, span');
-              const title = (titleEl ? titleEl.innerText : a.innerText).trim();
-              if (title && !title.includes('New chat') && !title.includes('Settings')) {
-                map[id] = { id, title, source: 'gemini' };
-              }
+              const title = a.innerText.trim();
+              if (title && !title.includes('New chat')) map[id] = { id, title, source: 'gemini' };
             }
           });
       } else if (location.hostname.includes('claude.ai')) {
-          // CLAUDE DEEP SCAN
           const links = deepQuerySelectorAll('a[href*="/chat/"]');
-          console.log(`🧬 [Scanner] Found ${links.length} potential Claude anchors.`);
           links.forEach(a => {
-              const href = a.getAttribute('href') || '';
-              const parts = href.split('/');
-              const id = parts[parts.length - 1];
+              const id = (a.getAttribute('href')||'').split('/').pop();
               const title = a.innerText.trim();
-              // Validate ID is a UUID (Clause style) or simple hash
-              if (id && id.length > 5 && title && title.length > 1) {
-                  map[id] = { id, title, source: 'claude' };
-              }
+              if (id && id.length > 5 && title) map[id] = { id, title, source: 'claude' };
           });
       }
-      const results = Object.values(map);
-      console.log(`🧬 [Scanner] Identified ${results.length} valid conversations.`);
-      sendResponse({ projects: results });
+      sendResponse({ projects: Object.values(map) });
       return true;
     }
 
-    if (msg.type === 'SCRAPE_GEMINI_CHAT' || msg.type === 'SCRAPE_CLAUDE_CHAT') {
-      console.log(`🧬 [Scraper] Starting ${msg.type}...`);
-      const messages = [];
-      const now = Date.now() / 1000;
-      const isClaude = location.hostname.includes('claude.ai');
-      
-      const selectors = isClaude 
-        ? '.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .message-content, .bg-bg-200'
-        : '.query-text, .user-query, .message-content, .model-response-text, .inline-answer, [role="article"], .prompt-content, .response-content';
-      
-      const allPossible = document.querySelectorAll(selectors);
-      
-      allPossible.forEach((el, idx) => {
-        const text = el.innerText.trim();
-        if (text.length < 2) return;
-        if (!isClaude && text.includes('Where should we start?')) return;
-
-        let isUser = false;
-        let isAssistant = false;
-
-        if (isClaude) {
-            // Claude: User uses bg-bg-200/300, Assistant uses font-claude-message or specific model classes
-            isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.matches('.bg-bg-200, .bg-bg-300');
-            isAssistant = el.closest('.font-claude-message') || (!isUser && text.length > 10);
-        } else {
-            isUser = el.classList.contains('query-text') || 
-                       el.classList.contains('user-query') ||
-                       el.classList.contains('prompt-content') ||
-                       el.closest('.query-text') ||
-                       el.closest('.user-query') ||
-                       el.matches('[aria-label*="user"]') ||
-                       el.closest('[aria-label*="user"]');
-
-            isAssistant = el.classList.contains('message-content') || 
-                            el.classList.contains('model-response-text') ||
-                            el.classList.contains('response-content') ||
-                            el.classList.contains('inline-answer') ||
-                            el.closest('.message-content') ||
-                            el.closest('.model-response-text') ||
-                            el.matches('[aria-label*="assistant"]') ||
-                            el.closest('[aria-label*="assistant"]') ||
-                            el.matches('[aria-label*="Gemini"]') ||
-                            el.closest('[aria-label*="Gemini"]');
-        }
-
-        if (isUser || isAssistant) {
-           messages.push({
-             role: isUser ? 'user' : 'assistant',
-             text: text,
-             images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-             created: now + (idx * 0.01) 
-           });
-        }
-      });
-
-      // DEDUPLICATE (Claude React sometimes doubles refs)
-      const finalMessages = [];
-      const seen = new Set();
-      messages.forEach(m => {
-          const key = m.role + m.text.slice(0, 100);
-          if (!seen.has(key)) {
-              finalMessages.push(m);
-              seen.add(key);
-          }
-      });
-
-      console.log(`🧬 [Scraper] Found ${finalMessages.length} messages.`);
-      sendResponse({ messages: finalMessages });
+    if (msg.type === 'SCRAPE_GEMINI_CHAT') {
+      const data = scrapeGemini();
+      console.log(`🧬 [Gemini] Scraped "${data.title}" with ${data.messages.length} msgs.`);
+      sendResponse({ messages: data.messages, title: data.title });
+    } else if (msg.type === 'SCRAPE_CLAUDE_CHAT') {
+      const data = scrapeClaude();
+      console.log(`🧬 [Claude] Scraped "${data.title}" with ${data.messages.length} msgs.`);
+      sendResponse({ messages: data.messages, title: data.title });
     }
     return true;
   });
