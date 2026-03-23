@@ -368,14 +368,26 @@ btnExport.addEventListener('click', () => {
   });
 });
 
-// ─── Restart ──────────────────────────────────────────────────────────────────
+// ─── Reset / Discard ──────────────────────────────────────────────────────────
+const btnDiscard = document.getElementById('btn-discard');
+if (btnDiscard) {
+  btnDiscard.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'RESET_STATE' }, (res) => {
+      if (res?.ok) {
+        doneErrors.style.display = 'none';
+        logLines.length = 0;
+        showScreen('setup');
+      }
+    });
+  });
+}
+
 btnRestart.addEventListener('click', () => {
-  doneErrors.style.display = 'none';
-  doneErrors.textContent = '';
-  logLines.length = 0;
-  badge.textContent = 'Ready';
-  badge.className = 'badge';
-  showScreen('setup');
+  chrome.runtime.sendMessage({ type: 'RESET_STATE' }, () => {
+    doneErrors.style.display = 'none';
+    logLines.length = 0;
+    showScreen('setup');
+  });
 });
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

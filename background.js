@@ -64,6 +64,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'OPEN_DASHBOARD') {
     chrome.tabs.create({ url: 'dashboard.html' });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.type === 'RESET_STATE') {
+    exportState = { ...exportState, running: false, phase: 'idle', fullConversations: [], fetched: 0, total: 0, errors: [], zipName: '' };
+    sendStatus();
+    sendResponse({ ok: true });
+    return true;
   }
 });
 
@@ -415,20 +424,23 @@ async function getTokenFromTab() {
 }
 
 async function fetchConversationList(token, options) {
-   let url = '/conversations?offset=0&limit=100&order=updated';
+   let path = '/conversations?offset=0&limit=100&order=updated';
    if (options.scope === 'project' && options.projectId) {
-     url += `&workspace_id=${options.projectId}`;
+     path += `&workspace_id=${options.projectId}`;
    }
-   if (options.scope === 'projects_only') {
-     // For 'Export Projects Only' (all projects), we might need to loop or use a broader query.
-     // For now, we'll fetch general list.
+   
+   try {
+     const res = await chatgptFetch(path, token);
+     return res?.items || [];
+   } catch(e) {
+     console.error('Fetch Error:', e);
+     return [];
    }
-   const res = await chatgptFetch(url, token);
-   return res?.items || [];
 }
 
 async function chatgptFetch(path, token) {
-  const res = await fetch(`https://chatgpt.com/backend-api${path}`, { headers: { 'Authorization': `Bearer ${token}` } });
+  const url = path.startsWith('http') ? path : `https://chatgpt.com/backend-api${path}`;
+  const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
   if (!res.ok) throw new Error(`API Error: ${res.status}`);
   return res.json();
 }
