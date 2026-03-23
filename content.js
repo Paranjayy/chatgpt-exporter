@@ -186,58 +186,78 @@
       sendResponse({ token: getAccessToken() });
     }
     if (msg.type === 'GET_PROJECTS_FROM_DOM') {
-      const dom = getProjectsFromDOM();
-      const current = getCurrentProjectFromURL();
       const map = {};
-      [...dom, ...(current ? [current] : [])].forEach(p => { map[p.id] = p; });
+      if (location.hostname.includes('chatgpt.com')) {
+          const dom = getProjectsFromDOM();
+          const current = getCurrentProjectFromURL();
+          [...dom, ...(current ? [current] : [])].forEach(p => { map[p.id] = p; });
+      } else if (location.hostname.includes('gemini.google.com')) {
+          // Gemini "History" entries in the sidebar
+          const links = document.querySelectorAll('a[href*="/app/"]');
+          links.forEach(a => {
+            const href = a.getAttribute('href') || '';
+            const match = href.match(/\/app\/([a-z0-9]+)/);
+            if (match) {
+              const id = match[1];
+              const title = a.querySelector('.conversation-title')?.innerText?.trim() 
+                  || a.innerText?.trim() 
+                  || 'Gemini Chat';
+              map[id] = { id, title, source: 'gemini' };
+            }
+          });
+      }
       sendResponse({ projects: Object.values(map) });
     }
+
     if (msg.type === 'SCRAPE_GEMINI_CHAT') {
       const messages = [];
-      // Gemini DOM structure (current best-guess based on standard layout)
-      // Usually messages are divs containing the text parts
-      const userItems = document.querySelectorAll('.query-text');
-      const responseItems = document.querySelectorAll('.message-content');
+      // NEW: Highly aggressive Gemini scraping logic
+      // User prompts usually: .query-text-inner, .user-query, h2 inside ms-chat-breakpoint
+      // Assistant responses usually: .message-content, .model-response-text, .inline-answer
       
-      const containers = document.querySelectorAll('.chat-content-container, mat-sidenav-content');
-      // If we can't find specific containers, we'll try a generic approach
-      const entries = document.querySelectorAll('div[class*="message"], div[class*="query"]');
+      const blocks = document.querySelectorAll('ms-chat-breakpoint, .chat-content-container, mat-sidenav-content');
       
-      // Let's try to find all pairs
-      // Gemini often puts user queries in .query-text and responses in .message-content
-      const allText = document.querySelectorAll('.query-text, .message-content, .model-response-text, .conversation-container, ms-chat-breakpoint, .user-query');
+      // Let's try to find every message container
+      const items = document.querySelectorAll('.query-text, .message-content, .model-response-text, .user-query, .model-response, [role="article"]');
       
-      allText.forEach(el => {
-        const isUser = el.classList.contains('query-text') || el.classList.contains('user-query') || el.tagName === 'USER-QUERY';
-        const text = el.innerText.trim();
-        if (text && text.length > 0) {
-            messages.push({
-              role: isUser ? 'user' : 'assistant',
-              text: text,
-              created: Date.now() / 1000
-            });
-        }
+      items.forEach(el => {
+        // Skip hidden or tiny fragments
+        if (el.innerText.length < 2) return;
+        
+        const isUser = el.classList.contains('query-text') || 
+                       el.classList.contains('user-query') || 
+                       el.closest('[class*="user"]') ||
+                       el.closest('[aria-label*="user"]');
+                       
+        const images = Array.from(el.querySelectorAll('img')).map(img => img.src).filter(src => src.startsWith('http'));
+
+        messages.push({
+          role: isUser ? 'user' : 'assistant',
+          text: el.innerText.trim(),
+          images: images,
+          created: Date.now() / 1000
+        });
       });
 
+      // Special case: Some Gemini response containers are nested differently
       if (messages.length === 0) {
-        // Broad search for chat-like elements
-        const chatBlocks = document.querySelectorAll('div[role="article"], .msg-content');
-        chatBlocks.forEach(b => {
-             const role = b.querySelector('.user-query, [aria-label*="user"]') ? 'user' : 'assistant';
-             messages.push({ role, text: b.innerText.trim() });
+        const generic = document.querySelectorAll('.prompt-content, .response-content, .inline-answer-container');
+        generic.forEach(el => {
+           const isUser = el.classList.contains('prompt-content');
+           messages.push({ role: isUser ? 'user' : 'assistant', text: el.innerText.trim() });
         });
       }
 
       sendResponse({ 
         chat: {
-          id: 'gemini-' + Date.now(),
+          id: 'gemini-' + (location.pathname.split('/').pop() || Date.now()),
           title: document.title.replace(' - Gemini', '') || 'Gemini Chat',
           mapping: messages.map((m, i) => ({
             id: i,
             message: {
                 author: { role: m.role },
-                content: { parts: [m.text] },
-                create_time: m.created
+                content: { parts: [m.text], images: m.images },
+                create_time: m.created || (Date.now() / 1000)
             }
           })),
           create_time: Date.now() / 1000

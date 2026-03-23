@@ -16,15 +16,19 @@ async function detectPlatform() {
     currentPlatform = 'gemini';
     document.body.dataset.platform = 'gemini';
     if (platformNameEl) platformNameEl.textContent = 'Gemini';
-    if (noticeEl) noticeEl.textContent = '⚠️ Scrapes Gemini live chats (no API needed)';
+    if (noticeEl) noticeEl.textContent = '⚠️ Scrapes Gemini live chats & sidebar history';
     
-    // Switch to gemini_current scope by default
+    // Enable Gemini history discovery
     tabs[0].textContent = 'Current Chat';
     tabs[0].dataset.scope = 'gemini_current';
-    tabs[1].style.display = 'none';
-    tabs[2].style.display = 'none';
+    tabs[1].textContent = 'Discovered History';
+    tabs[1].dataset.scope = 'gemini_history';
+    tabs[1].style.display = 'block';
+    tabs[2].style.display = 'none'; // Individual project selection still pending for Gemini
+    
     currentScope = 'gemini_current';
     updateExportButtonLabel();
+    loadProjects(); // This will trigger sidebar discovery
   } else {
     currentPlatform = 'chatgpt';
     document.body.dataset.platform = 'chatgpt';
@@ -87,7 +91,8 @@ function updateExportButtonLabel() {
     all: 'Export All Chats',
     projects_only: 'Export Projects Only',
     project: 'Export This Project',
-    gemini_current: 'Export Gemini Chat'
+    gemini_current: 'Export Current Gemini Chat',
+    gemini_history: 'Export Discovered History'
   };
   btnExport.innerHTML = `
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

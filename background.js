@@ -121,14 +121,61 @@ async function getTokenFromTab() {
 
 // ─── Gemini Support (Scraping Based) ─────────────────────────────────────────
 
-async function getGeminiChatFromTab(tabId) {
-  // We'll use the content script to scrape the DOM of the active Gemini chat
+async function navigateAndScrapeGemini(url) {
   return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_GEMINI_CHAT' }, (resp) => {
-      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (resp?.chat) resolve(resp.chat);
-      else reject(new Error('Failed to scrape Gemini chat'));
+    chrome.tabs.create({ url, active: false }, (tab) => {
+      const fn = (tabId, info) => {
+        if (tabId === tab.id && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(fn);
+          // Wait for the JS to render messages
+          setTimeout(async () => {
+            try {
+              const r = await chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_GEMINI_CHAT' });
+              chrome.tabs.remove(tab.id);
+              resolve(r?.chat || null);
+            } catch (e) {
+                chrome.tabs.remove(tab.id);
+                reject(e);
+            }
+          }, 3500); 
+        }
+      };
+      chrome.tabs.onUpdated.addListener(fn);
     });
+  });
+}
+
+async function getGeminiChatFromTab(tabId) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // First try messaging
+      chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_GEMINI_CHAT' }, (resp) => {
+        if (!chrome.runtime.lastError && resp?.chat) {
+          return resolve(resp.chat);
+        }
+        
+        // Fallback: Execute script directly if messaging fails
+        chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          func: () => {
+             // In-place scraper function for emergency
+             const msgs = [];
+             const items = document.querySelectorAll('.query-text, .message-content, .model-response-text, .user-query, .model-response, [role="article"]');
+             items.forEach(el => {
+                const isUser = el.classList.contains('query-text') || el.classList.contains('user-query') || el.closest('[aria-label*="user"]');
+                msgs.push({ role: isUser?'user':'assistant', text: el.innerText.trim() });
+             });
+             return { chat: { id: 'gemini-fallback-'+Date.now(), title: document.title, mapping: msgs.map((m,i)=>({ id:i, message:{ author:{ role:m.role }, content:{ parts:[m.text] } }})) } };
+          }
+        }, (results) => {
+          if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+          if (results?.[0]?.result?.chat) resolve(results[0].result.chat);
+          else reject(new Error('Goated Harvester failed to find chat content on this page. Refresh and try again?'));
+        });
+      });
+    } catch (e) {
+      reject(e);
+    }
   });
 }
 
@@ -383,10 +430,13 @@ async function runExport(options) {
   };
   sendStatus();
 
-  // 1) Token
+  // 1) Token (Only for ChatGPT scopes)
+  const isChatGPT = ['all', 'projects_only', 'project'].includes(options.scope);
   try {
-    if (!exportState.token) exportState.token = await getTokenFromTab();
-    if (!exportState.token) throw new Error('Could not get auth token  are you logged into chatgpt.com?');
+    if (isChatGPT) {
+      if (!exportState.token) exportState.token = await getTokenFromTab();
+      if (!exportState.token) throw new Error('Could not get auth token  are you logged into chatgpt.com?');
+    }
   } catch (e) {
     exportState.errors.push(e.message);
     exportState.running = false;
@@ -400,11 +450,35 @@ async function runExport(options) {
     if (options.scope === 'gemini_current') {
         const chat = await getGeminiChatFromTab(options.tabId);
         exportState.conversations = [chat];
-        exportState.fullConversations = [chat]; // Gemini scraper returns full data
-        exportState.fetched = 1;
-        exportState.total = 1;
+        exportState.fullConversations = [chat];
+        exportState.fetched = 1; exportState.total = 1;
         exportState.phase = 'saving';
-    } else if (options.scope === 'project' && options.projectId) {
+    } 
+    else if (options.scope === 'gemini_history') {
+        // CRAWLER APPROACH
+        exportState.phase = 'fetching_list';
+        const projects = await loadProjects(); // Sidebar discovery
+        const geminiHistory = projects.filter(p => !p.id.startsWith('g-p-')); // Simple filter
+        exportState.total = geminiHistory.length;
+        exportState.phase = 'fetching_chats';
+        sendStatus();
+
+        for (const entry of geminiHistory) {
+            try {
+                // Navigate a background tab to the conversation URL
+                const url = `https://gemini.google.com/app/${entry.id}`;
+                const chat = await navigateAndScrapeGemini(url);
+                if (chat) exportState.fullConversations.push(chat);
+            } catch (e) {
+                exportState.errors.push(`"${entry.title}": ${e.message}`);
+            }
+            exportState.fetched++;
+            sendStatus();
+            await sleep(1500); // Respect Gemini's UI load time
+        }
+        exportState.phase = 'saving';
+    }
+    else if (options.scope === 'project' && options.projectId) {
       exportState.conversations = await fetchProjectConversations(exportState.token, { 
         id: options.projectId, 
         title: exportState.projects?.find(p => p.id === options.projectId)?.title || 'Project'
