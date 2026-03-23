@@ -1,184 +1,37 @@
-// content.js — runs on chatgpt.com, extracts auth token + project data from DOM
-
+// content.js — runs on AI platforms to extract chat data
 (function () {
   function getAccessToken() {
-    try {
-      const bootstrap = document.getElementById('client-bootstrap');
-      if (bootstrap) {
-        const data = JSON.parse(bootstrap.textContent);
-        if (data?.session?.accessToken) return data.session.accessToken;
-      }
-    } catch (_) {}
     try {
       const scripts = document.querySelectorAll('script[type="application/json"]');
       for (const s of scripts) {
         const match = s.textContent.match(/"accessToken":"([^"]+)"/);
         if (match) return match[1];
       }
+      const bootstrap = document.getElementById('client-bootstrap');
+      if (bootstrap) {
+        const data = JSON.parse(bootstrap.textContent);
+        return data?.session?.accessToken;
+      }
     } catch (_) {}
     return null;
   }
 
-  // Scrape projects from the ChatGPT sidebar.
-  // Project links look like: /g/g-p-<hash>-<name>/project
   function getProjectsFromDOM() {
     const projects = [];
     const seen = new Set();
-    
-    // Look for links that point to GPTs or Projects
     const links = Array.from(document.querySelectorAll('a[href*="/g/"], a[href*="/project/"]'));
-    
     for (const a of links) {
       const href = a.getAttribute('href') || '';
-      // Matches both /g/g-p-... and /project/... style URLs
       const match = href.match(/\/(g\/)?(g-p-[^/]+)/) || href.match(/\/project\/([^/]+)/);
-      if (!match) continue;
-      
-      const rawId = match[2] || match[1];
-      // Strip slug: OpenAI often appends -name to the ID in the URL. 
-      // Gizmo IDs are g-p-HEX (3 parts). Projects are often just the ID.
-      const parts = rawId.split('-');
-      const id = rawId.startsWith('g-p-') ? parts.slice(0, 3).join('-') : parts[0];
-      
-      if (seen.has(id)) continue;
-      seen.add(id);
-      
-      const title = a.querySelector('.truncate')?.innerText?.trim()
-        || a.innerText?.trim()
-        || id.replace(/^g-p-[a-f0-9]+-/, '').replace(/-/g, ' ');
-        
-      projects.push({ id, title, gizmoId: id.startsWith('g-p-') ? id : null });
+      if (match) {
+        const id = match[2] || match[1];
+        if (!seen.has(id)) {
+          seen.add(id);
+          projects.push({ id, title: a.innerText.trim() || id, gizmoId: id.startsWith('g-p-') ? id : null });
+        }
+      }
     }
     return projects;
-  }
-
-  // Also detect current project from the URL
-  function getCurrentProjectFromURL() {
-    const match = location.pathname.match(/\/g\/(g-p-[^/]+)/);
-    if (!match) return null;
-    const gizmoId = match[1];
-    const slug = gizmoId.replace(/^g-p-[a-f0-9]+-/, '').replace(/-/g, ' ');
-    return { id: gizmoId, title: slug, gizmoId };
-  }
-
-  // ─── UI Injection (Global Quick-Hub & Sidebar) ─────────────────────────────
-  function injectGlobalHub() {
-    if (document.getElementById('cgpt-global-hub')) return;
-    
-    const hub = document.createElement('div');
-    hub.id = 'cgpt-global-hub';
-    hub.innerHTML = `
-      <div class="hub-container" style="position:fixed;bottom:24px;right:24px;z-index:99999;display:flex;align-items:center;gap:12px;background:rgba(26,26,26,0.85);backdrop-filter:blur(12px);padding:8px 16px;border-radius:14px;border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(0,0,0,0.4);transition:all 0.3s cubic-bezier(0.19, 1, 0.22, 1);transform:translateY(0);color:#eee;font-family:sans-serif;">
-        <div class="hub-logo" style="width:28px;height:28px;background:#10a37f;border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 15px rgba(16,163,127,0.4)">
-           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="18 20 18 10 12 20 12 4 6 20 6 14"/></svg>
-        </div>
-        <div style="width:1px;height:20px;background:rgba(255,255,255,0.1)"></div>
-        <button class="hub-btn" id="hub-export-btn" title="Export Current Chat" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:8px;border-radius:8px;transition:all 0.2s;display:flex;align-items:center;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        </button>
-        <button class="hub-btn" id="hub-dash-btn" title="Open Insights" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:8px;border-radius:8px;transition:all 0.2s;display:flex;align-items:center;">
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-        </button>
-      </div>
-    `;
-
-    document.body.appendChild(hub);
-
-    const style = document.createElement('style');
-    style.textContent = `
-      #cgpt-global-hub:hover .hub-container { border-color: rgba(16,163,127,0.5); transform: translateY(-4px); }
-      .hub-btn:hover { background: rgba(255,255,255,0.1); color: #10a37f !important; }
-    `;
-    document.head.appendChild(style);
-
-    document.getElementById('hub-dash-btn').onclick = () => chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
-    document.getElementById('hub-export-btn').onclick = () => {
-        const btn = document.getElementById('hub-export-btn');
-        btn.style.color = '#10a37f';
-        chrome.runtime.sendMessage({ type: 'RUN_QUICK_EXPORT' });
-        setTimeout(() => btn.style.color = '#eee', 2000);
-    };
-  }
-
-  function injectSidebarUI() {
-    if (document.getElementById('cgpt-exporter-btn')) return;
-
-    // ChatGPT uses nav, Gemini uses chat-app or specific sidebars
-    const sidebar = document.querySelector('nav') || document.querySelector('side-navigation-v2');
-    if (!sidebar) return;
-
-    const btn = document.createElement('div');
-    btn.id = 'cgpt-exporter-btn';
-    btn.innerHTML = `
-      <div class="cgpt-exporter-inner" style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:10px 12px;border-radius:10px;margin:8px;transition:background 0.2s;color:#c5c5d2;">
-        <div style="width:24px;height:24px;background:#10a37f;border-radius:6px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(16,163,127,0.3)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        </div>
-        <span style="font-weight:500;font-size:14px">Explorer Insights</span>
-      </div>
-    `;
-
-    const inner = btn.querySelector('.cgpt-exporter-inner');
-    inner.onmouseover = () => { inner.style.background = 'rgba(255,255,255,0.1)'; };
-    inner.onmouseout = () => { inner.style.background = 'none'; };
-    btn.onclick = () => chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
-
-    // Insert at the bottom of the nav
-    const profile = sidebar.lastElementChild;
-    if (profile) sidebar.insertBefore(btn, profile);
-    else sidebar.appendChild(btn);
-  }
-
-  // ─── Selection Export (Floating Snippet Button) ──────────────────────────────
-  document.addEventListener('mouseup', (e) => {
-    const selection = window.getSelection().toString().trim();
-    let btn = document.getElementById('cgpt-snippet-btn');
-    
-    if (selection.length > 10) {
-      if (!btn) {
-        btn = document.createElement('button');
-        btn.id = 'cgpt-snippet-btn';
-        btn.innerHTML = 'Export Snippet';
-        Object.assign(btn.style, {
-          position: 'absolute', background: '#10a37f', color: 'white', border: 'none',
-          padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600',
-          cursor: 'pointer', zIndex: '10000', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'none'
-        });
-        document.body.appendChild(btn);
-      }
-      
-      const range = window.getSelection().getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      btn.style.left = `${rect.left + window.scrollX - 40}px`; 
-      btn.style.top = `${rect.top + window.scrollY - 45}px`;
-      btn.style.display = 'block';
-      
-      btn.onclick = (ev) => {
-        ev.stopPropagation();
-        chrome.runtime.sendMessage({ 
-            type: 'SAVE_SNIPPET', 
-            snippet: selection, 
-            source: document.title || 'AI Chat'
-        });
-        btn.innerHTML = '✓ Saved!';
-        btn.style.background = '#0d8a6a';
-        setTimeout(() => {
-            btn.style.display = 'none';
-            btn.innerHTML = 'Export Snippet';
-            btn.style.background = '#10a37f';
-        }, 1500);
-      };
-    } else if (btn) {
-      btn.style.display = 'none';
-    }
-  });
-
-  // Auto-init for supported domains
-  if (location.hostname.includes('chatgpt.com') || location.hostname.includes('gemini.google.com')) {
-    setInterval(() => {
-      injectGlobalHub();
-      injectSidebarUI();
-    }, 2000);
   }
 
   function scrapeGemini() {
@@ -186,138 +39,97 @@
     const now = Date.now() / 1000;
     const titleEl = document.querySelector('[data-test-id="conversation-title"], [aria-label="Rename conversation"], h1');
     const title = (titleEl ? titleEl.innerText : document.title).replace(' - Gemini', '').trim();
-    
-    // Aggressive Gemini selectors: user query vs model response
     const items = document.querySelectorAll('.query-text, .user-query, [data-test-id="model-response"], .message-content, .inline-answer');
-    
     items.forEach((el, idx) => {
       const text = el.innerText.trim();
       if (text.length < 2 || text.includes('Where should we start?')) return;
-
       const isUser = el.closest('.query-text, .user-query, .prompt-content') || el.matches('.query-text, .user-query, .prompt-content');
-      
-      messages.push({
-        role: isUser ? 'user' : 'assistant',
-        text,
-        images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-        created: now + (idx * 0.01)
-      });
+      messages.push({ role: isUser ? 'user' : 'assistant', text, images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')), created: now + (idx * 0.01) });
     });
     return { title, messages };
   }
 
   function scrapeClaude() {
+    console.log("🧬 [Scraper] Initializing Structural Claude Scraping...");
     const messages = [];
     const now = Date.now() / 1000;
-    
-    // Title usually in the top bar center H1
-    const titleEl = document.querySelector('header h1, .font-claude-message-title, div[class*="title"]');
-    const title = (titleEl ? titleEl.innerText : document.title).replace(' - Claude', '').trim();
-
-    // Claude uses [data-testid="message-container"] which contains the role
-    const containers = document.querySelectorAll('[data-testid*="message-container"]');
-    
-    if (containers.length > 0) {
-      containers.forEach((el, idx) => {
-        const isUser = el.getAttribute('data-testid')?.includes('user');
-        const contentEl = el.querySelector('[data-testid*="message-content"], .grid-cols-1');
-        if (contentEl) {
-           messages.push({
-             role: isUser ? 'user' : 'assistant',
-             text: contentEl.innerText.trim(),
-             images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-             created: now + (idx * 0.01)
-           });
-        }
-      });
-    } else {
-      // Fallback to bubble-based scraping if data-testid changed
-      const items = document.querySelectorAll('.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .bg-bg-200, .bg-bg-300');
-      items.forEach((el, idx) => {
-        const text = el.innerText.trim();
-        if (text.length < 2) return;
-        const isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.matches('.bg-bg-200, .bg-bg-300');
-        messages.push({
-          role: isUser ? 'user' : 'assistant',
-          text,
-          images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-          created: now + (idx * 0.01)
-        });
-      });
-    }
-
-    // Deduplicate
-    const final = [];
-    const seen = new Set();
-    messages.forEach(m => {
-       const key = m.role + m.text.slice(0, 100);
-       if (!seen.has(key)) {
-         final.push(m);
-         seen.add(key);
-       }
+    const titleEl = document.querySelector('header h1, h1') || { innerText: document.title };
+    const title = titleEl.innerText.replace(' - Claude', '').trim();
+    const containers = document.querySelectorAll('.grid.gap-4, [data-testid*="message-container"], .max-w-3xl');
+    let lastRole = null;
+    containers.forEach((el, idx) => {
+      const text = el.innerText.trim();
+      if (text.length < 2 || text === 'Copy' || text === 'Retry' || text.startsWith('View ') && text.endsWith(' artifacts')) return;
+      const isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.querySelector('.bg-bg-200, .bg-bg-300');
+      const role = isUser ? 'user' : 'assistant';
+      const images = Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http'));
+      if (lastRole === role && messages.length > 0 && messages[messages.length-1].text.includes(text.slice(0, 20))) return;
+      messages.push({ role, text, images, created: now + (idx * 0.1) });
+      lastRole = role;
     });
-    return { title, messages: final };
+    return { title, messages };
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg.type === 'GET_TOKEN') {
-      sendResponse({ token: getAccessToken() });
-    }
+    if (msg.type === 'GET_TOKEN') sendResponse({ token: getAccessToken() });
     if (msg.type === 'GET_PROJECTS_FROM_DOM') {
-      console.log('🧬 [Scanner] Detecting sidebar conversations...');
       const map = {};
-
       const deepQuerySelectorAll = (selector, root = document) => {
         const results = Array.from(root.querySelectorAll(selector));
         const pushResults = (node) => {
-          if (node.shadowRoot) {
-            results.push(...deepQuerySelectorAll(selector, node.shadowRoot));
-          }
+          if (node.shadowRoot) results.push(...deepQuerySelectorAll(selector, node.shadowRoot));
           for (const child of Array.from(node.children)) pushResults(child);
         };
         pushResults(root === document ? document.body : root);
         return results;
       };
-
-      if (location.hostname.includes('chatgpt.com')) {
-          getProjectsFromDOM().forEach(p => { map[p.id] = p; });
-          const cur = getCurrentProjectFromURL();
-          if (cur) map[cur.id] = cur;
-      } else if (location.hostname.includes('gemini.google.com')) {
-          const links = deepQuerySelectorAll('a[href*="/app/"]');
-          links.forEach(a => {
-            const match = (a.getAttribute('href')||'').match(/\/app\/([a-z0-9]+)/);
-            if (match) {
-              const id = match[1];
-              const title = a.innerText.trim();
-              if (id && title && !title.includes('New chat')) map[id] = { id, title, source: 'gemini' };
-            }
-          });
+      if (location.hostname.includes('chatgpt.com')) getProjectsFromDOM().forEach(p => { map[p.id] = p; });
+      else if (location.hostname.includes('gemini.google.com')) {
+        deepQuerySelectorAll('a[href*="/app/"]').forEach(a => {
+          const match = (a.getAttribute('href')||'').match(/\/app\/([a-z0-9]+)/);
+          if (match) map[match[1]] = { id: match[1], title: a.innerText.trim(), source: 'gemini' };
+        });
       } else if (location.hostname.includes('claude.ai')) {
-          const links = deepQuerySelectorAll('a[href*="/chat/"], [role="link"], [data-testid*="chat-link"]');
-          links.forEach(a => {
-              const href = a.getAttribute('href') || a.getAttribute('data-href') || '';
-              const idMatches = href.match(/\/chat\/([a-z0-9-]+)/);
-              const id = idMatches ? idMatches[1] : '';
-              const title = a.innerText.trim();
-              if (id && id.length > 5 && title && title.length > 1 && !map[id]) {
-                  map[id] = { id, title, source: 'claude' };
-              }
-          });
+        deepQuerySelectorAll('a[href*="/chat/"], [role="link"], [data-testid*="chat-link"]').forEach(a => {
+          const href = a.getAttribute('href') || a.getAttribute('data-href') || '';
+          const match = href.match(/\/chat\/([a-z0-9-]+)/);
+          if (match) map[match[1]] = { id: match[1], title: a.innerText.trim() || match[1], source: 'claude' };
+        });
       }
       sendResponse({ projects: Object.values(map) });
-      return true;
     }
-
-    if (msg.type === 'SCRAPE_GEMINI_CHAT') {
-      const data = scrapeGemini();
-      console.log(`🧬 [Gemini] Scraped "${data.title}" with ${data.messages.length} msgs.`);
-      sendResponse({ messages: data.messages, title: data.title });
-    } else if (msg.type === 'SCRAPE_CLAUDE_CHAT') {
-      const data = scrapeClaude();
-      console.log(`🧬 [Claude] Found ${data.messages.length} msgs on "${data.title}".`);
-      sendResponse({ messages: data.messages, title: data.title });
-    }
+    if (msg.type === 'SCRAPE_GEMINI_CHAT') sendResponse(scrapeGemini());
+    if (msg.type === 'SCRAPE_CLAUDE_CHAT') sendResponse(scrapeClaude());
     return true;
   });
+
+  function injectHubPill() {
+    if (document.getElementById('hub-pill-root')) return;
+    const root = document.createElement('div');
+    root.id = 'hub-pill-root';
+    root.style = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;';
+    root.innerHTML = `
+      <div class="hub-container" style="display:flex;align-items:center;gap:12px;background:rgba(26,26,26,0.95);backdrop-filter:blur(16px);padding:10px 18px;border-radius:18px;border:1px solid rgba(255,255,255,0.1);box-shadow:0 12px 48px rgba(0,0,0,0.6);color:#eee;font-family:Inter, sans-serif;">
+        <div class="hub-logo" style="width:32px;height:32px;background:#10a37f;border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(16,163,127,0.5)">
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="18 20 18 10 12 20 12 4 6 20 6 14"></polyline></svg>
+        </div>
+        <div style="width:1px;height:24px;background:rgba(255,255,255,0.1)"></div>
+        <button id="hub-export-btn" title="Export Current Chat" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:10px;border-radius:10px;transition:all 0.2s;display:flex;align-items:center;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </button>
+        <button id="hub-dash-btn" title="Open Pulse Dashboard" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:10px;border-radius:10px;transition:all 0.2s;display:flex;align-items:center;">
+           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+        </button>
+      </div>
+    `;
+    document.body.appendChild(root);
+    document.getElementById('hub-export-btn').onclick = () => {
+      chrome.runtime.sendMessage({ type: 'START_EXPORT', options: { format: 'json', includeAssets: true, scope: 'current', tabId: 'active' } });
+    };
+    document.getElementById('hub-dash-btn').onclick = () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
+    };
+  }
+  setInterval(injectHubPill, 4000);
+  injectHubPill();
 })();

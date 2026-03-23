@@ -290,9 +290,10 @@ function stopPolling() {
 
 // ─── Export button ────────────────────────────────────────────────────────────
 btnExport.addEventListener('click', () => {
-  const format       = document.querySelector('input[name="format"]:checked')?.value || 'json';
-  const includeAssets = document.getElementById('opt-assets').checked;
-  const projectId    = currentScope === 'project' ? projectSelect.value : null;
+  const formatChecked = document.querySelector('input[name="format"]:checked');
+  const format         = (formatChecked ? formatChecked.value : 'json').toLowerCase();
+  const includeAssets  = document.getElementById('opt-assets').checked;
+  const projectId      = currentScope === 'project' ? projectSelect.value : null;
 
   if (currentScope === 'project' && !projectId) {
     log('⚠ Please select a project first.');
@@ -311,12 +312,18 @@ btnExport.addEventListener('click', () => {
   statDl.textContent      = '0';
   phaseLabel.textContent  = 'Initializing…';
   log('▶ Starting export…');
-  log(`  Scope: ${currentScope}${projectId ? ' → ' + (projectSelect.options[projectSelect.selectedIndex]?.text || projectId) : ''}`);
+  log(`  Scope: ${currentScope}${projectId ? ' → ' + projectId : ''}`);
   log(`  Format: ${format}, Assets: ${includeAssets}`);
 
   chrome.runtime.sendMessage({
     type: 'START_EXPORT',
-    options: { format, includeAssets, scope: currentScope, projectId, tabId: activeTabId },
+    options: { 
+      format: format === 'csv' ? 'json' : format, // Fallback for spreadsheet
+      includeAssets, 
+      scope: currentScope, 
+      projectId, 
+      tabId: activeTabId 
+    },
   }, () => {
     if (chrome.runtime.lastError) {
       log('Error: ' + chrome.runtime.lastError.message);
