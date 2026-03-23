@@ -122,7 +122,8 @@
 
     const root = document.createElement('div');
     root.id = 'hub-pill-root';
-    root.style = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;display:flex;flex-direction:column-reverse;align-items:flex-end;gap:12px;';
+    const bottomOffset = location.hostname === 'chatgpt.com' ? '90px' : '24px';
+    root.style = `position:fixed;bottom:${bottomOffset};right:24px;z-index:2147483647;display:flex;flex-direction:column-reverse;align-items:flex-end;gap:12px;`;
     root.innerHTML = `
       <style>
         .hub-menu { display:none; flex-direction:column; gap:12px; background:rgba(26,26,26,0.98); backdrop-filter:blur(24px); padding:16px; border-radius:24px; border:1px solid rgba(255,255,255,0.1); box-shadow:0 12px 64px rgba(0,0,0,0.8); animation: slideUp 0.3s cubic-bezier(0.19, 1, 0.22, 1); width:280px; }
