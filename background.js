@@ -427,26 +427,42 @@ async function getTokenFromTab() {
   return null;
 }
 
+async function fetchProjects(token) {
+  const projects = [];
+  const seen = new Set();
+  try {
+    const gizmos = await chatgptFetch('/gizmos/bootstrap', token);
+    if (gizmos?.items) {
+      gizmos.items.forEach(item => {
+        const id = item.gizmo?.id || item.id;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          projects.push({ id, title: item.gizmo?.display?.name || item.name, gizmoId: id });
+        }
+      });
+    }
+  } catch(e) {}
+  return projects;
+}
+
 async function fetchConversationList(token, options) {
   let path = '/conversations?offset=0&limit=100&order=updated';
   const pid = options.projectId;
   
   if (options.scope === 'project' && pid) {
-    if (pid.startsWith('g-p-')) {
-      path = `/conversations?offset=0&limit=100&order=updated&category=gizmo&gizmo_id=${pid}`;
-    } else {
-      path += `&workspace_id=${pid}`;
-    }
-    
+    path = pid.startsWith('g-p-') 
+      ? `/conversations?offset=0&limit=100&order=updated&category=gizmo&gizmo_id=${pid}`
+      : `/conversations?offset=0&limit=100&order=updated&workspace_id=${pid}`;
+      
     try {
       const res = await chatgptFetch(path, token);
       if (res?.items?.length > 0) return res.items;
-      // Fallback: If 0 returned, maybe it's not a workspace/gizmo but needs different ID
-      console.log('Project fetch returned 0, trying with workspace_id fallback...');
-      const fallbackPath = `/conversations?offset=0&limit=100&order=updated&workspace_id=${pid}`;
-      const res2 = await chatgptFetch(fallbackPath, token);
-      if (res2?.items) return res2.items;
-    } catch(e) { console.error('Project path fail:', e); }
+      // Fallback
+      if (!pid.startsWith('g-p-')) {
+         const fb = await chatgptFetch(`/conversations?offset=0&limit=100&order=updated&workspace_id=${pid}`, token);
+         if (fb?.items) return fb.items;
+      }
+    } catch(e) {}
   }
 
   const res = await chatgptFetch('/conversations?offset=0&limit=100&order=updated', token);

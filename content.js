@@ -1,5 +1,6 @@
-// content.js — runs on AI platforms to extract chat data
 (function () {
+  if (!chrome.runtime?.id) return;
+  
   let selectedScope = null;
   let selectedFmt = 'md';
 
