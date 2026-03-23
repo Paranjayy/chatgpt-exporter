@@ -27,32 +27,90 @@
     return null;
   }
 
+  function deepQuerySelectorAll(selector, root = document) {
+    const results = Array.from(root.querySelectorAll(selector));
+    const pushResults = (node) => {
+      if (node.shadowRoot) results.push(...deepQuerySelectorAll(selector, node.shadowRoot));
+      const children = Array.from(node.children || []);
+      for (const child of children) pushResults(child);
+    };
+    pushResults(root === document ? (document.body || document.documentElement) : root);
+    return results;
+  }
+
   function getProjectsFromDOM() {
     const projects = [];
     const seen = new Set();
-    const sidebarLinks = Array.from(document.querySelectorAll('nav a[href*="/g/"], nav a[href*="/project/"]'));
-    sidebarLinks.forEach(a => {
-      const href = a.getAttribute('href') || '';
-      const match = href.match(/\/(g\/)?(g-p-[a-z0-9]+)/) || href.match(/\/project\/([a-z0-9-]+)/);
-      if (match) {
-        const id = match[2] || match[1];
-        if (!seen.has(id)) {
-          seen.add(id);
-          const title = (a.querySelector('div')?.innerText || a.innerText || id).trim().split('\n')[0];
-          projects.push({ id, title, gizmoId: id.startsWith('g-p-') ? id : null, source: 'chatgpt' });
+    const platform = location.hostname.includes('gemini') ? 'gemini' : (location.hostname.includes('claude') ? 'claude' : 'chatgpt');
+    
+    if (platform === 'chatgpt') {
+      const links = deepQuerySelectorAll('nav a[href*="/g/"], nav a[href*="/project/"]');
+      links.forEach(a => {
+        const href = a.getAttribute('href') || '';
+        const match = href.match(/\/(g\/)?(g-p-[a-z0-9]+)/) || href.match(/\/project\/([a-z0-9-]+)/);
+        if (match) {
+          const id = match[2] || match[1];
+          if (!seen.has(id)) {
+            seen.add(id);
+            const title = (a.innerText || id).trim().split('\n')[0];
+            projects.push({ id, title, gizmoId: id.startsWith('g-p-') ? id : null, source: 'chatgpt' });
+          }
         }
-      }
-    });
+      });
+    } else if (platform === 'gemini') {
+      deepQuerySelectorAll('a[href*="/app/"]').forEach(a => {
+        const match = (a.getAttribute('href')||'').match(/\/app\/([a-z0-9]+)/);
+        if (match) projects.push({ id: match[1], title: a.innerText.trim(), source: 'gemini' });
+      });
+    } else if (platform === 'claude') {
+      deepQuerySelectorAll('a[href*="/chat/"], [role="link"], [data-testid*="chat-link"]').forEach(a => {
+        const href = a.getAttribute('href') || a.getAttribute('data-href') || '';
+        const match = href.match(/\/chat\/([a-z0-9-]+)/);
+        if (match) projects.push({ id: match[1], title: a.innerText.trim() || match[1], source: 'claude' });
+      });
+    }
     return projects;
+  }
+
+  function scrapeGemini() {
+    const messages = [];
+    const now = Date.now() / 1000;
+    const titleEl = document.querySelector('[data-test-id="conversation-title"], [aria-label="Rename conversation"], h1');
+    const title = (titleEl ? titleEl.innerText : document.title).replace(' - Gemini', '').trim();
+    const items = document.querySelectorAll('.query-text, .user-query, [data-test-id="model-response"], .message-content, .inline-answer');
+    items.forEach((el, idx) => {
+      const text = el.innerText.trim();
+      if (text.length < 2 || text.includes('Where should we start?')) return;
+      const isUser = el.closest('.query-text, .user-query, .prompt-content') || el.matches('.query-text, .user-query, .prompt-content');
+      messages.push({ role: isUser ? 'user' : 'assistant', text, created: now + (idx * 0.01) });
+    });
+    return { title, messages };
+  }
+
+  function scrapeClaude() {
+    const messages = [];
+    const now = Date.now() / 1000;
+    const titleEl = document.querySelector('header h1, h1') || { innerText: document.title };
+    const title = titleEl.innerText.replace(' - Claude', '').trim();
+    const containers = document.querySelectorAll('.grid.gap-4, [data-testid*="message-container"], .max-w-3xl');
+    let lastRole = null;
+    containers.forEach((el, idx) => {
+      const text = el.innerText.trim();
+      if (text.length < 2 || text === 'Copy' || text === 'Retry' || text.startsWith('View ') && text.endsWith(' artifacts')) return;
+      const isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.querySelector('.bg-bg-200, .bg-bg-300');
+      const role = isUser ? 'user' : 'assistant';
+      if (lastRole === role && messages.length > 0 && messages[messages.length-1].text.includes(text.slice(0, 20))) return;
+      messages.push({ role, text, created: now + (idx * 0.1) });
+      lastRole = role;
+    });
+    return { title, messages };
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'GET_TOKEN') sendResponse({ token: getAccessToken() });
-    if (msg.type === 'GET_PROJECTS_FROM_DOM') {
-      const map = {};
-      getProjectsFromDOM().forEach(p => { map[p.id] = p; });
-      sendResponse({ projects: Object.values(map) });
-    }
+    if (msg.type === 'GET_PROJECTS_FROM_DOM') sendResponse({ projects: getProjectsFromDOM() });
+    if (msg.type === 'SCRAPE_GEMINI_CHAT') sendResponse(scrapeGemini());
+    if (msg.type === 'SCRAPE_CLAUDE_CHAT') sendResponse(scrapeClaude());
     return true;
   });
 
