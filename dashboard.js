@@ -170,9 +170,26 @@ function renderHome(filterProject = null) {
         filtered.forEach(h => { (h.keywords || []).forEach(k => kwMap[k] = (kwMap[k] || 0) + 1); });
         const sortedKws = Object.entries(kwMap).sort((a,b) => b[1] - a[1]).slice(0, 10);
 
+        // Weekly Heatmap logic
+        const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const weekMap = {0:0,1:0,2:0,3:0,4:0,5:0,6:0};
+        filtered.forEach(h => {
+            const d = new Date(h.createdAt * 1000).getDay();
+            weekMap[d]++;
+        });
+        const weekMax = Math.max(...Object.values(weekMap), 1);
+        const heatmap = weekDays.map((name, i) => {
+            const opacity = 0.1 + (weekMap[i] / weekMax) * 0.9;
+            return `<div style="flex:1; background:rgba(16,163,127,${opacity}); height:40px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:bold; color:${opacity > 0.5 ? 'white' : '#8b949e'}">${name}</div>`;
+        }).join('');
+
         statsPanel.innerHTML = `
             <div style="display:flex; height:150px; align-items:flex-end; gap:16px; margin-bottom:50px; border-bottom:1px solid #30363d; padding-bottom:10px">
                 ${bars}
+            </div>
+            <p style="margin-bottom:15px">Weekly Distribution:</p>
+            <div style="display:flex; gap:4px; margin-bottom:40px">
+                ${heatmap}
             </div>
             <p style="margin-bottom:15px">Most Frequent Keywords:</p>
             <div style="display:flex; flex-wrap:wrap; gap:8px">

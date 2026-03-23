@@ -122,8 +122,9 @@
       
       const range = window.getSelection().getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      btn.style.left = `${rect.left + window.scrollX}px`;
-      btn.style.top = `${rect.top + window.scrollY - 40}px`;
+      // Offset to the left to avoid ChatGPT's native "Ask ChatGPT" bubble which usually appears in the center/right
+      btn.style.left = `${rect.left + window.scrollX - 40}px`; 
+      btn.style.top = `${rect.top + window.scrollY - 45}px`;
       btn.style.display = 'block';
       
       btn.onclick = (ev) => {
