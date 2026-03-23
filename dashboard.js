@@ -237,9 +237,9 @@ function renderPrompts() {
 
 function performSearch(query) {
     const hits = historyData.filter(h => 
-        h.title.toLowerCase().includes(query) || 
-        h.promptSnippet.toLowerCase().includes(query) ||
-        h.project.toLowerCase().includes(query)
+        (h.title || '').toLowerCase().includes(query) || 
+        (h.promptSnippet || '').toLowerCase().includes(query) ||
+        (h.project || '').toLowerCase().includes(query)
     );
     
     if (hits.length === 0) {

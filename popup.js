@@ -411,3 +411,10 @@ chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (state) => {
     }
   }
 });
+
+// ─── GitHub link hover (CSP-safe) ────────────────────────────────────────────
+const ghLink = document.getElementById('github-link');
+if (ghLink) {
+  ghLink.addEventListener('mouseenter', () => { ghLink.style.color = 'rgba(255,255,255,0.8)'; });
+  ghLink.addEventListener('mouseleave', () => { ghLink.style.color = 'rgba(255,255,255,0.3)'; });
+}

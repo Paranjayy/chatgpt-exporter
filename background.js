@@ -148,7 +148,23 @@ async function startExport(options) {
       let tabId = options.tabId;
       if (tabId === 'active' || tabId === 'current') tabId = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
       const type = options.scope.split('_')[0];
-      const chat = type === 'gemini' ? await getGeminiChatFromTab(tabId) : await getClaudeChatFromTab(tabId);
+      let chat;
+      if (type === 'gemini') {
+        chat = await getGeminiChatFromTab(tabId);
+      } else if (type === 'claude') {
+        chat = await getClaudeChatFromTab(tabId);
+      } else {
+        // chatgpt: use API with conversation ID from tab URL
+        const token = exportState.token || await getTokenFromTab();
+        if (!token) console.warn('[ChatGPT Exporter] No cached token; falling back to tab discovery.');
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        const chatIdMatch = (tab?.url || '').match(/\/c\/([a-z0-9-]+)/);
+        if (chatIdMatch && token) {
+          chat = await chatgptFetch(`/conversation/${chatIdMatch[1]}`, token);
+        } else {
+          throw new Error('Could not determine current ChatGPT conversation. Please open a specific chat first.');
+        }
+      }
       if (chat) exportState.fullConversations = [chat];
       exportState.total = exportState.fullConversations.length;
     } 
@@ -425,24 +441,6 @@ async function getTokenFromTab() {
     } catch(_) {}
   }
   return null;
-}
-
-async function fetchProjects(token) {
-  const projects = [];
-  const seen = new Set();
-  try {
-    const gizmos = await chatgptFetch('/gizmos/bootstrap', token);
-    if (gizmos?.items) {
-      gizmos.items.forEach(item => {
-        const id = item.gizmo?.id || item.id;
-        if (id && !seen.has(id)) {
-          seen.add(id);
-          projects.push({ id, title: item.gizmo?.display?.name || item.name, gizmoId: id });
-        }
-      });
-    }
-  } catch(e) {}
-  return projects;
 }
 
 async function fetchConversationList(token, options) {
