@@ -197,7 +197,7 @@ async function navigateAndScrapeGemini(url) {
 
 async function navigateAndScrapeClaude(url) {
     const tab = await chrome.tabs.create({ url, active: false });
-    await sleep(3000); // Claude is React-heavy
+    await sleep(6000); // Claude's React engine is heavy; give it time to settle
     try {
         const chat = await getClaudeChatFromTab(tab.id);
         chrome.tabs.remove(tab.id);
@@ -759,6 +759,9 @@ function extractAssetUrls(conv) {
     if (!msg?.content) continue;
     const { content, metadata } = msg;
 
+    if (content.images) {
+      content.images.forEach(u => urls.add(u));
+    }
     for (const att of (content.attachments || [])) {
       if (att.url) urls.add(att.url);
       if (att.download_url) urls.add(att.download_url);

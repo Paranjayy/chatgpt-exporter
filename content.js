@@ -184,31 +184,24 @@
   function scrapeGemini() {
     const messages = [];
     const now = Date.now() / 1000;
-    const titleEl = document.querySelector('[aria-label="Rename conversation"]') || document.querySelector('h1') || { innerText: document.title };
-    const title = titleEl.innerText.replace(' - Gemini', '').trim();
+    const titleEl = document.querySelector('[data-test-id="conversation-title"], [aria-label="Rename conversation"], h1');
+    const title = (titleEl ? titleEl.innerText : document.title).replace(' - Gemini', '').trim();
     
-    const items = document.querySelectorAll('.query-text, .user-query, .message-content, .model-response-text, .inline-answer, [role="article"], .prompt-content, .response-content');
+    // Aggressive Gemini selectors: user query vs model response
+    const items = document.querySelectorAll('.query-text, .user-query, [data-test-id="model-response"], .message-content, .inline-answer');
     
     items.forEach((el, idx) => {
       const text = el.innerText.trim();
       if (text.length < 2 || text.includes('Where should we start?')) return;
 
-      const isUser = el.classList.contains('query-text') || 
-                     el.classList.contains('user-query') ||
-                     el.classList.contains('prompt-content') ||
-                     el.closest('.query-text') ||
-                     el.closest('.user-query') ||
-                     el.matches('[aria-label*="user"]') ||
-                     el.closest('[aria-label*="user"]');
-
-      if (isUser || text.length > 1) {
-         messages.push({
-           role: isUser ? 'user' : 'assistant',
-           text,
-           images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-           created: now + (idx * 0.01)
-         });
-      }
+      const isUser = el.closest('.query-text, .user-query, .prompt-content') || el.matches('.query-text, .user-query, .prompt-content');
+      
+      messages.push({
+        role: isUser ? 'user' : 'assistant',
+        text,
+        images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
+        created: now + (idx * 0.01)
+      });
     });
     return { title, messages };
   }
@@ -217,33 +210,43 @@
     const messages = [];
     const now = Date.now() / 1000;
     
-    // Title usually in the top bar center
-    const titleEl = document.querySelector('div.flex.items-center.gap-1 h1, .font-claude-message-title, h1');
+    // Title usually in the top bar center H1
+    const titleEl = document.querySelector('header h1, .font-claude-message-title, div[class*="title"]');
     const title = (titleEl ? titleEl.innerText : document.title).replace(' - Claude', '').trim();
 
-    // Claude messages are often in bubbles with bg-bg-200/300 (User) or font-claude-message (Assistant)
-    // We also look for the grid container which usually holds message blocks
-    const items = document.querySelectorAll('.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .message-content, .bg-bg-200, .bg-bg-300');
+    // Claude uses [data-testid="message-container"] which contains the role
+    const containers = document.querySelectorAll('[data-testid*="message-container"]');
     
-    items.forEach((el, idx) => {
-      const text = el.innerText.trim();
-      if (text.length < 1) return;
+    if (containers.length > 0) {
+      containers.forEach((el, idx) => {
+        const isUser = el.getAttribute('data-testid')?.includes('user');
+        const contentEl = el.querySelector('[data-testid*="message-content"], .grid-cols-1');
+        if (contentEl) {
+           messages.push({
+             role: isUser ? 'user' : 'assistant',
+             text: contentEl.innerText.trim(),
+             images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
+             created: now + (idx * 0.01)
+           });
+        }
+      });
+    } else {
+      // Fallback to bubble-based scraping if data-testid changed
+      const items = document.querySelectorAll('.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .bg-bg-200, .bg-bg-300');
+      items.forEach((el, idx) => {
+        const text = el.innerText.trim();
+        if (text.length < 2) return;
+        const isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.matches('.bg-bg-200, .bg-bg-300');
+        messages.push({
+          role: isUser ? 'user' : 'assistant',
+          text,
+          images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
+          created: now + (idx * 0.01)
+        });
+      });
+    }
 
-      const isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.matches('.bg-bg-200, .bg-bg-300');
-      // On Claude, if it's not a user bubble, it's almost certainly the AI output
-      const isAssistant = el.closest('.font-claude-message') || el.matches('.font-claude-message') || (!isUser && text.length > 5);
-
-      if (isUser || isAssistant) {
-         messages.push({
-           role: isUser ? 'user' : 'assistant',
-           text,
-           images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-           created: now + (idx * 0.01)
-         });
-      }
-    });
-
-    // Deduplicate: Claude React DOM sometimes has nested structures that double-count text
+    // Deduplicate
     const final = [];
     const seen = new Set();
     messages.forEach(m => {
@@ -270,7 +273,7 @@
           if (node.shadowRoot) {
             results.push(...deepQuerySelectorAll(selector, node.shadowRoot));
           }
-          for (const child of node.children) pushResults(child);
+          for (const child of Array.from(node.children)) pushResults(child);
         };
         pushResults(root === document ? document.body : root);
         return results;
@@ -287,15 +290,19 @@
             if (match) {
               const id = match[1];
               const title = a.innerText.trim();
-              if (title && !title.includes('New chat')) map[id] = { id, title, source: 'gemini' };
+              if (id && title && !title.includes('New chat')) map[id] = { id, title, source: 'gemini' };
             }
           });
       } else if (location.hostname.includes('claude.ai')) {
-          const links = deepQuerySelectorAll('a[href*="/chat/"]');
+          const links = deepQuerySelectorAll('a[href*="/chat/"], [role="link"], [data-testid*="chat-link"]');
           links.forEach(a => {
-              const id = (a.getAttribute('href')||'').split('/').pop();
+              const href = a.getAttribute('href') || a.getAttribute('data-href') || '';
+              const idMatches = href.match(/\/chat\/([a-z0-9-]+)/);
+              const id = idMatches ? idMatches[1] : '';
               const title = a.innerText.trim();
-              if (id && id.length > 5 && title) map[id] = { id, title, source: 'claude' };
+              if (id && id.length > 5 && title && title.length > 1 && !map[id]) {
+                  map[id] = { id, title, source: 'claude' };
+              }
           });
       }
       sendResponse({ projects: Object.values(map) });
@@ -308,7 +315,7 @@
       sendResponse({ messages: data.messages, title: data.title });
     } else if (msg.type === 'SCRAPE_CLAUDE_CHAT') {
       const data = scrapeClaude();
-      console.log(`🧬 [Claude] Scraped "${data.title}" with ${data.messages.length} msgs.`);
+      console.log(`🧬 [Claude] Found ${data.messages.length} msgs on "${data.title}".`);
       sendResponse({ messages: data.messages, title: data.title });
     }
     return true;

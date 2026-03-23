@@ -15,7 +15,7 @@ This roadmap outlines the evolution from a simple ChatGPT tool to a universal **
 - [ ] **Multi-AI Support**: Logic to detect and scrape alternate LLM interfaces.
   - [ ] **Gemini Integration**: Support for `gemini.google.com`.
   - [ ] **Claude Integration**: Support for `claude.ai`.
-  - [ ] **Mistral/Deepseek/Kimi**: Unified harvesting logic for leading cloud LLMs.
+  - [ ] **Mistral/Deepseek/Kimi/z.ai**: Unified harvesting logic for leading cloud LLMs.
 - [ ] **Unified Dashboard**: Merge history from all platforms into one analytical view.
 - [ ] **Brand Identity**: Custom logo, branding, and premium UI kit.
 
