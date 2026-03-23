@@ -13,12 +13,14 @@
     "storage",
     "cookies",
     "tabs",
+    "scripting",
     "offscreen",
     "notifications",
     "contextMenus"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
     "*://*/*"
   ],
   "background": {
@@ -34,9 +36,9 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
+      "matches": ["https://chatgpt.com/*", "https://gemini.google.com/*"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_end"
     }
   ]
 }

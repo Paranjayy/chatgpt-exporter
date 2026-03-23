@@ -411,7 +411,9 @@ async function runExport(options) {
   const scopeTag = options.scope === 'project' ? 'project' :
                    options.scope === 'projects_only' ? 'projects' : 'all';
   const datestamp = new Date().toISOString().slice(0, 10);
-  const zipFilename = `chatgpt-export-${datestamp}-${scopeTag}.zip`;
+  const isGemini = scope.startsWith('gemini');
+  const prefix = isGemini ? 'gemini' : 'chatgpt';
+  const zipFilename = `${prefix}-export-${datestamp}-${scopeTag}.zip`;
 
   exportState = {
     ...exportState,
@@ -453,6 +455,7 @@ async function runExport(options) {
         exportState.fullConversations = [chat];
         exportState.fetched = 1; exportState.total = 1;
         exportState.phase = 'saving';
+        sendStatus();
     } 
     else if (options.scope === 'gemini_history') {
         // CRAWLER APPROACH
@@ -739,22 +742,46 @@ function extractAssetUrls(conv) {
 function flattenMessages(conv) {
   const mapping = conv.mapping || {};
   const msgs = [];
-  function walk(id) {
-    const node = mapping[id];
-    if (!node) return;
-    if (node.message?.content) {
+  
+  // 1) Try Tree Walk (ChatGPT style)
+  const root = Object.keys(mapping).find(k => k && !mapping[k].parent);
+  if (root && mapping[root].children?.length > 0) {
+    function walk(id) {
+        const node = mapping[id];
+        if (!node) return;
+        if (node.message?.content) {
+          const { author, content, create_time } = node.message;
+          const role = author?.role || 'unknown';
+          const text = (content.parts || [])
+            .map(p => typeof p === 'string' ? p : (p?.text || ''))
+            .join('\n').trim();
+          if (text) msgs.push({ role, text, created: create_time });
+        }
+        for (const c of (node.children || [])) walk(c);
+    }
+    walk(root);
+    if (msgs.length > 0) return msgs;
+  }
+
+  // 2) Fallback: Flatten all items (Gemini / Flat style)
+  for (const node of Object.values(mapping)) {
+    if (node?.message) {
       const { author, content, create_time } = node.message;
-      const role = author?.role || 'unknown';
+      const role = author?.role || 'user';
       const text = (content.parts || [])
         .map(p => typeof p === 'string' ? p : (p?.text || ''))
         .join('\n').trim();
-      if (text) msgs.push({ role, text, created: create_time });
+      if (text) {
+        msgs.push({
+          role,
+          text,
+          created: create_time,
+          images: content.images || []
+        });
+      }
     }
-    for (const c of (node.children || [])) walk(c);
   }
-  const root = Object.keys(mapping).find(k => !mapping[k].parent);
-  if (root) walk(root);
-  return msgs;
+  return msgs.sort((a, b) => (a.created || 0) - (b.created || 0));
 }
 
 function conversationToMarkdown(conv) {
@@ -775,6 +802,8 @@ function conversationToMarkdown(conv) {
     return conv.default_model_slug || null;
   })();
 
+  const aiName = (conv.id || '').includes('gemini') ? 'Gemini' : 'ChatGPT';
+
   // YAML-style front matter for interop with Obsidian, etc.
   let md = `---\n`;
   md += `title: "${title.replace(/"/g, "'")}"\n`;
@@ -783,7 +812,7 @@ function conversationToMarkdown(conv) {
   if (created)   md += `created: ${created.toISOString()}\n`;
   if (updated)   md += `updated: ${updated.toISOString()}\n`;
   if (modelSlug) md += `model: ${modelSlug}\n`;
-  md += `messages: ${msgs.length}  # ${userMsgs} from you, ${aiMsgs} from ChatGPT\n`;
+  md += `messages: ${msgs.length}  # ${userMsgs} from you, ${aiMsgs} from ${aiName}\n`;
   if (conv.gizmo_id) md += `gpt_id: ${conv.gizmo_id}\n`;
   if (conv.plugin_ids?.length) md += `plugins: [${conv.plugin_ids.join(', ')}]\n`;
   md += `---\n\n`;
@@ -797,7 +826,7 @@ function conversationToMarkdown(conv) {
 
   for (const m of msgs) {
     const lbl = m.role === 'user' ? '##  You' :
-                m.role === 'assistant' ? '##  ChatGPT' :
+                m.role === 'assistant' ? `##  ${aiName}` :
                 m.role === 'tool' ? '##  Tool' : `## ${m.role}`;
     const ts = m.created ? `\n*${new Date(m.created * 1000).toLocaleTimeString()}*` : '';
     md += `${lbl}${ts}\n\n${m.text}\n\n---\n\n`;

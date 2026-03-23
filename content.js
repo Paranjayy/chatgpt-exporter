@@ -192,17 +192,18 @@
           const current = getCurrentProjectFromURL();
           [...dom, ...(current ? [current] : [])].forEach(p => { map[p.id] = p; });
       } else if (location.hostname.includes('gemini.google.com')) {
-          // Gemini "History" entries in the sidebar
-          const links = document.querySelectorAll('a[href*="/app/"]');
+          // GEMINI PRECISION RECOVERY
+          const links = document.querySelectorAll('a[data-test-id="conversation"], a[href*="/app/"]');
           links.forEach(a => {
             const href = a.getAttribute('href') || '';
             const match = href.match(/\/app\/([a-z0-9]+)/);
             if (match) {
               const id = match[1];
-              const title = a.querySelector('.conversation-title')?.innerText?.trim() 
-                  || a.innerText?.trim() 
-                  || 'Gemini Chat';
-              map[id] = { id, title, source: 'gemini' };
+              const titleEl = a.querySelector('[class*="title"], .conversation-title, span');
+              const title = (titleEl ? titleEl.innerText : a.innerText).trim();
+              if (title && !title.includes('New chat') && !title.includes('Settings')) {
+                map[id] = { id, title, source: 'gemini' };
+              }
             }
           });
       }
@@ -211,56 +212,68 @@
 
     if (msg.type === 'SCRAPE_GEMINI_CHAT') {
       const messages = [];
-      // NEW: Highly aggressive Gemini scraping logic
-      // User prompts usually: .query-text-inner, .user-query, h2 inside ms-chat-breakpoint
-      // Assistant responses usually: .message-content, .model-response-text, .inline-answer
+      const now = Date.now() / 1000;
       
-      const blocks = document.querySelectorAll('ms-chat-breakpoint, .chat-content-container, mat-sidenav-content');
+      const allPossible = document.querySelectorAll('.query-text, .user-query, .message-content, .model-response-text, .inline-answer, [role="article"], .prompt-content, .response-content');
       
-      // Let's try to find every message container
-      const items = document.querySelectorAll('.query-text, .message-content, .model-response-text, .user-query, .model-response, [role="article"]');
-      
-      items.forEach(el => {
-        // Skip hidden or tiny fragments
-        if (el.innerText.length < 2) return;
-        
-        const isUser = el.classList.contains('query-text') || 
-                       el.classList.contains('user-query') || 
-                       el.closest('[class*="user"]') ||
-                       el.closest('[aria-label*="user"]');
-                       
-        const images = Array.from(el.querySelectorAll('img')).map(img => img.src).filter(src => src.startsWith('http'));
+      allPossible.forEach((el, idx) => {
+        const text = el.innerText.trim();
+        if (text.length < 2 || text.includes('Where should we start?')) return;
 
-        messages.push({
-          role: isUser ? 'user' : 'assistant',
-          text: el.innerText.trim(),
-          images: images,
-          created: Date.now() / 1000
-        });
+        const isUser = el.classList.contains('query-text') || 
+                       el.classList.contains('user-query') ||
+                       el.classList.contains('prompt-content') ||
+                       el.closest('.query-text') ||
+                       el.closest('.user-query') ||
+                       el.matches('[aria-label*="user"]') ||
+                       el.closest('[aria-label*="user"]');
+
+        const isAssistant = el.classList.contains('message-content') || 
+                            el.classList.contains('model-response-text') ||
+                            el.classList.contains('response-content') ||
+                            el.classList.contains('inline-answer') ||
+                            el.closest('.message-content') ||
+                            el.closest('.model-response-text') ||
+                            el.matches('[aria-label*="assistant"]') ||
+                            el.closest('[aria-label*="assistant"]') ||
+                            el.matches('[aria-label*="Gemini"]') ||
+                            el.closest('[aria-label*="Gemini"]');
+
+        if (isUser || isAssistant) {
+           messages.push({
+             role: isUser ? 'user' : 'assistant',
+             text: text,
+             images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
+             // ADD INCREMENTAL TIMESTAMP TO PREVENT COLLISION
+             created: now + (idx * 0.001) 
+           });
+        }
       });
 
-      // Special case: Some Gemini response containers are nested differently
-      if (messages.length === 0) {
-        const generic = document.querySelectorAll('.prompt-content, .response-content, .inline-answer-container');
-        generic.forEach(el => {
-           const isUser = el.classList.contains('prompt-content');
-           messages.push({ role: isUser ? 'user' : 'assistant', text: el.innerText.trim() });
-        });
-      }
+      // STRICT DEDUPLICATION
+      const finalMessages = [];
+      const seen = new Set();
+      messages.forEach(m => {
+          const clean = m.text.replace(/\s+/g, ' ').trim();
+          if (!seen.has(clean)) {
+              finalMessages.push(m);
+              seen.add(clean);
+          }
+      });
 
       sendResponse({ 
         chat: {
           id: 'gemini-' + (location.pathname.split('/').pop() || Date.now()),
           title: document.title.replace(' - Gemini', '') || 'Gemini Chat',
-          mapping: messages.map((m, i) => ({
+          mapping: finalMessages.map((m, i) => ({
             id: i,
             message: {
                 author: { role: m.role },
-                content: { parts: [m.text], images: m.images },
-                create_time: m.created || (Date.now() / 1000)
+                content: { parts: [m.text], images: m.images || [] },
+                create_time: m.created
             }
           })),
-          create_time: Date.now() / 1000
+          create_time: now
         }
       });
     }
