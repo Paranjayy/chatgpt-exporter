@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChatGPT Exporter</title>
+  <title>AI Insight Hub</title>
   <link rel="stylesheet" href="popup.css">
 </head>
-<body>
+<body data-platform="chatgpt">
   <div class="app">
     <!-- Header -->
     <header class="header">
       <div class="logo">
-        <img src="icons/icon48.png" alt="" width="22" height="22">
-        <span class="logo-text">ChatGPT <strong>Exporter</strong></span>
+        <img src="icons/icon48.png" id="platform-icon" alt="" width="22" height="22">
+        <span class="logo-text"><span id="platform-name">AI</span> <strong>Exporter</strong></span>
       </div>
       <div class="header-right">
         <button id="btn-insights" title="Open Analytical Dashboard">

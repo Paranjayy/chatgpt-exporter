@@ -1,7 +1,13 @@
 // Background service worker  ChatGPT Exporter
 // No external deps; no Blob/URL.createObjectURL (not available in SW)
 
-const BASE_URL = 'https://chatgpt.com/backend-api';
+/** Platform specific domains */
+const DOMAINS = {
+  CHATGPT: 'chatgpt.com',
+  GEMINI: 'gemini.google.com'
+};
+
+const CHATGPT_BASE_URL = 'https://chatgpt.com/backend-api';
 const PAGE_SIZE = 100;
 
 // ─── Files Collector (prepares files for offscreen JSZip) ─────────────────────
@@ -15,7 +21,7 @@ class FilesCollector {
   toFileList() {
     return this.files.map(f => ({ 
         name: f.name, 
-        dataB64: btoa(String.fromCharCode(...f.data)) 
+        dataB64: uint8ToBase64(new Uint8Array(f.data))
     }));
   }
 }
@@ -80,7 +86,7 @@ function sendStatus(extra = {}) {
 // 
 
 async function chatgptFetch(path, token, raw = false) {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${CHATGPT_BASE_URL}${path}`, {
     headers: { 'Authorization': `Bearer ${token}` },
     credentials: 'include',
   });
@@ -110,21 +116,18 @@ async function getTokenFromTab() {
       if (r?.token) return r.token;
     } catch (_) {}
   }
-  // Open silently
-  return new Promise(resolve => {
-    chrome.tabs.create({ url: 'https://chatgpt.com/', active: false }, tab => {
-      const fn = (tabId, info) => {
-        if (tabId === tab.id && info.status === 'complete') {
-          chrome.tabs.onUpdated.removeListener(fn);
-          setTimeout(async () => {
-            try {
-              const r = await chrome.tabs.sendMessage(tab.id, { type: 'GET_TOKEN' });
-              resolve(r?.token || null);
-            } catch (_) { resolve(null); }
-          }, 2500);
-        }
-      };
-      chrome.tabs.onUpdated.addListener(fn);
+  return null;
+}
+
+// ─── Gemini Support (Scraping Based) ─────────────────────────────────────────
+
+async function getGeminiChatFromTab(tabId) {
+  // We'll use the content script to scrape the DOM of the active Gemini chat
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_GEMINI_CHAT' }, (resp) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      if (resp?.chat) resolve(resp.chat);
+      else reject(new Error('Failed to scrape Gemini chat'));
     });
   });
 }
@@ -392,18 +395,35 @@ async function runExport(options) {
     return;
   }
 
-  // 2) Fetch conversation list
+  // 2) Fetch conversation list / Chat data
   try {
-    if (options.scope === 'project' && options.projectId) {
+    if (options.scope === 'gemini_current') {
+        const chat = await getGeminiChatFromTab(options.tabId);
+        exportState.conversations = [chat];
+        exportState.fullConversations = [chat]; // Gemini scraper returns full data
+        exportState.fetched = 1;
+        exportState.total = 1;
+        exportState.phase = 'saving';
+    } else if (options.scope === 'project' && options.projectId) {
       exportState.conversations = await fetchProjectConversations(exportState.token, { 
         id: options.projectId, 
         title: exportState.projects?.find(p => p.id === options.projectId)?.title || 'Project'
       });
+      if (exportState.conversations.length > 0) exportState.phase = 'fetching_chats';
+    } else if (options.scope === 'project' && options.singleId) {
+       // Single ChatGPT chat from Quick Hub
+       const full = await chatgptFetch(`/conversation/${options.singleId}`, exportState.token);
+       exportState.conversations = [full];
+       exportState.fullConversations = [full];
+       exportState.fetched = 1;
+       exportState.total = 1;
+       exportState.phase = 'saving';
     } else {
       exportState.conversations = await fetchConversationList(exportState.token, options);
+      if (exportState.conversations.length > 0) exportState.phase = 'fetching_chats';
     }
   } catch (e) {
-    exportState.errors.push('Conversation list failed: ' + e.message);
+    exportState.errors.push('Conversation fetch failed: ' + e.message);
   }
 
   if (exportState.conversations.length === 0) {
@@ -418,27 +438,27 @@ async function runExport(options) {
   sendStatus();
 
   // 3) Fetch full conversation content (3 parallel workers)
-  exportState.phase = 'fetching_chats';
-  sendStatus();
-
-  const queue = [...exportState.conversations];
-  async function worker() {
-    while (queue.length > 0) {
-      const conv = queue.shift();
-      try {
-        const full = await chatgptFetch(`/conversation/${conv.id}`, exportState.token);
-        if (conv._projectTitle) full._projectTitle = conv._projectTitle;
-        if (conv._projectId)    full._projectId    = conv._projectId;
-        exportState.fullConversations.push(full);
-      } catch (e) {
-        exportState.errors.push(`"${conv.title || conv.id}": ${e.message}`);
+  if (exportState.phase === 'fetching_chats') {
+    sendStatus();
+    const queue = [...exportState.conversations];
+    async function worker() {
+      while (queue.length > 0) {
+        const conv = queue.shift();
+        try {
+          const full = await chatgptFetch(`/conversation/${conv.id}`, exportState.token);
+          if (conv._projectTitle) full._projectTitle = conv._projectTitle;
+          if (conv._projectId)    full._projectId    = conv._projectId;
+          exportState.fullConversations.push(full);
+        } catch (e) {
+          exportState.errors.push(`"${conv.title || conv.id}": ${e.message}`);
+        }
+        exportState.fetched++;
+        sendStatus();
+        await sleep(150);
       }
-      exportState.fetched++;
-      sendStatus();
-      await sleep(150);
     }
+    await Promise.all([worker(), worker(), worker()]);
   }
-  await Promise.all([worker(), worker(), worker()]);
 
   // 4) Build ZIP & Data Sync
   exportState.phase = 'saving';
@@ -826,6 +846,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'OPEN_DASHBOARD') {
     chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
     sendResponse({ success: true });
+    return true;
+  }
+
+  if (msg.type === 'RUN_QUICK_EXPORT') {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (!tabs[0]) return;
+      const url = tabs[0].url;
+      if (url.includes(DOMAINS.CHATGPT)) {
+        // Run ChatGPT single chat export
+        const idMatch = url.match(/\/c\/([a-f0-9-]+)/);
+        if (idMatch) {
+            runExport({ scope: 'project', format: 'json', projectId: null, singleId: idMatch[1] });
+        } else {
+            runExport({ scope: 'all', format: 'json' }); 
+        }
+      } else if (url.includes(DOMAINS.GEMINI)) {
+        // Run Gemini single chat export
+        runExport({ scope: 'gemini_current', format: 'json', tabId: tabs[0].id });
+      }
+    });
     return true;
   }
 

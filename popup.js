@@ -1,6 +1,39 @@
-// Popup script — ChatGPT Exporter
+// ─── Platform Detection ───────────────────────────────────────────────────────
+let currentPlatform = 'chatgpt';
+let activeTabId = null;
 
-const CIRCUMFERENCE = 2 * Math.PI * 47; // r=47 → 295.3
+async function detectPlatform() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
+  activeTabId = tab.id;
+  
+  const platformNameEl = document.getElementById('platform-name');
+  const platformIconEl = document.getElementById('platform-icon');
+  const noticeEl = document.querySelector('.notice');
+  const tabs = document.querySelectorAll('.scope-tab');
+
+  if (tab.url.includes('gemini.google.com')) {
+    currentPlatform = 'gemini';
+    document.body.dataset.platform = 'gemini';
+    if (platformNameEl) platformNameEl.textContent = 'Gemini';
+    if (noticeEl) noticeEl.textContent = '⚠️ Scrapes Gemini live chats (no API needed)';
+    
+    // Switch to gemini_current scope by default
+    tabs[0].textContent = 'Current Chat';
+    tabs[0].dataset.scope = 'gemini_current';
+    tabs[1].style.display = 'none';
+    tabs[2].style.display = 'none';
+    currentScope = 'gemini_current';
+    updateExportButtonLabel();
+  } else {
+    currentPlatform = 'chatgpt';
+    document.body.dataset.platform = 'chatgpt';
+    if (platformNameEl) platformNameEl.textContent = 'ChatGPT';
+    if (noticeEl) noticeEl.innerHTML = '⚠️ Must be logged into <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>';
+  }
+}
+
+const CIRCUMFERENCE = 2 * Math.PI * 47;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const screens = {
@@ -29,6 +62,8 @@ const btnRefresh     = document.getElementById('btn-refresh-projects');
 let currentScope = 'all';
 let projectsCache = [];
 
+detectPlatform();
+
 // ─── Scope Tab Switching ──────────────────────────────────────────────────────
 document.querySelectorAll('.scope-tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -36,14 +71,11 @@ document.querySelectorAll('.scope-tab').forEach(tab => {
     tab.classList.add('active');
     currentScope = tab.dataset.scope;
 
-    // Update button label
     updateExportButtonLabel();
 
     if (currentScope === 'project') {
       projectPicker.style.display = 'flex';
-      if (projectsCache.length === 0) {
-        loadProjects();
-      }
+      if (projectsCache.length === 0) loadProjects();
     } else {
       projectPicker.style.display = 'none';
     }
@@ -55,12 +87,11 @@ function updateExportButtonLabel() {
     all: 'Export All Chats',
     projects_only: 'Export Projects Only',
     project: 'Export This Project',
+    gemini_current: 'Export Gemini Chat'
   };
   btnExport.innerHTML = `
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-      <polyline points="7 10 12 15 17 10"/>
-      <line x1="12" y1="15" x2="12" y2="3"/>
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
     ${labels[currentScope] || 'Export'}
   `;
@@ -261,7 +292,7 @@ btnExport.addEventListener('click', () => {
 
   chrome.runtime.sendMessage({
     type: 'START_EXPORT',
-    options: { format, includeAssets, scope: currentScope, projectId },
+    options: { format, includeAssets, scope: currentScope, projectId, tabId: activeTabId },
   }, () => {
     if (chrome.runtime.lastError) {
       log('Error: ' + chrome.runtime.lastError.message);
