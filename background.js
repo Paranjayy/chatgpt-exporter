@@ -455,7 +455,31 @@ async function chatgptFetch(path, token) {
   return res.json();
 }
 
-async function fetchProjects(token) { return []; } 
+async function fetchProjects(token) {
+  const projects = [];
+  const seen = new Set();
+  try {
+    // 1. Fetch Gizmos (Projects/GPTs)
+    const gizmos = await chatgptFetch('/gizmos/bootstrap', token);
+    if (gizmos?.items) {
+      gizmos.items.forEach(item => {
+        const id = item.gizmo?.id || item.id;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          projects.push({ id, title: item.gizmo?.display?.name || item.name, gizmoId: id });
+        }
+      });
+    }
+  } catch(e) { console.error('Gizmo Fetch Fail:', e); }
+
+  try {
+    // 2. Fetch Workspaces (Org projects)
+    const workspaces = await chatgptFetch('/accounts', token);
+    // Workspaces often nested in accounts
+  } catch(e) {}
+
+  return projects;
+}
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
