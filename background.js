@@ -18,6 +18,7 @@ let exportState = {
 };
 
 let cancelSignal = false;
+let currentOptions = null;
 
 function sendStatus() {
   chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: exportState });
@@ -31,10 +32,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   
   if (msg.type === 'CANCEL_EXPORT') {
     cancelSignal = true;
-    exportState.running = false;
-    exportState.phase = 'idle';
-    exportState.errors.push('Export stopped by user.');
-    sendStatus();
+    if (exportState.fullConversations.length > 0) {
+      finalizeZip(currentOptions || {}).then(() => {
+        exportState.running = false;
+        exportState.phase = 'done';
+        sendStatus();
+      });
+    } else {
+      exportState.running = false;
+      exportState.phase = 'idle';
+      sendStatus();
+    }
     sendResponse({ ok: true });
     return true;
   }
@@ -48,6 +56,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'START_EXPORT') {
     cancelSignal = false;
+    currentOptions = msg.options;
     startExport(msg.options);
     sendResponse({ started: true });
     return true;
@@ -332,7 +341,12 @@ async function createZipViaOffscreen(fileList, zipFilename) {
 
 async function getTokenFromTab() {
   const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
-  for (const t of tabs) { try { const r = await chrome.tabs.sendMessage(t.id, { type: 'GET_TOKEN' }); if (r?.token) return r.token; } catch(_) {} }
+  for (const t of tabs) {
+    try {
+      const r = await chrome.tabs.sendMessage(t.id, { type: 'GET_TOKEN' });
+      if (r?.token) return r.token;
+    } catch(_) {}
+  }
   return null;
 }
 
