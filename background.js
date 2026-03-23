@@ -429,8 +429,14 @@ async function getTokenFromTab() {
 
 async function fetchConversationList(token, options) {
    let path = '/conversations?offset=0&limit=100&order=updated';
+   
    if (options.scope === 'project' && options.projectId) {
-     path += `&workspace_id=${options.projectId}`;
+     const pid = options.projectId;
+     if (pid.startsWith('g-p-')) {
+       path = `/conversations?offset=0&limit=100&order=updated&category=gizmo&gizmo_id=${pid}`;
+     } else {
+       path += `&workspace_id=${pid}`;
+     }
    }
    
    try {
