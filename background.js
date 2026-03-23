@@ -212,11 +212,13 @@ async function startExport(options) {
         for (const pid of projectIds) {
           try {
             const items = await fetchConversationList(token, { scope: 'project', projectId: pid });
+            items.forEach(item => item.origProjectId = pid);
             convs.push(...items);
           } catch(e) { exportState.errors.push(`Project ${pid}: ${e.message}`); }
         }
       } else {
         convs = await fetchConversationList(token, options);
+        if (options.projectId) convs.forEach(item => item.origProjectId = options.projectId);
       }
       
       exportState.total = convs.length;
@@ -228,7 +230,9 @@ async function startExport(options) {
         exportState.currentChatTitle = `Downloading: ${conv.title}`;
         sendStatus();
         try {
-           const full = await chatgptFetch(`/conversation/${conv.id}`, token);
+           let detailPath = `/conversation/${conv.id}`;
+           if (conv.origProjectId) detailPath += `?workspace_id=${conv.origProjectId}`;
+           const full = await chatgptFetch(detailPath, token);
            exportState.fullConversations.push(full);
         } catch (e) { exportState.errors.push(`${conv.title}: ${e.message}`); }
         exportState.fetched++;
