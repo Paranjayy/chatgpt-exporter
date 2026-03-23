@@ -133,33 +133,53 @@
     if (document.getElementById('hub-pill-root')) return;
     const root = document.createElement('div');
     root.id = 'hub-pill-root';
-    root.style = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;';
+    root.style = 'position:fixed;bottom:28px;right:28px;z-index:2147483647;';
     root.innerHTML = `
-      <div class="hub-container" style="display:flex;align-items:center;gap:12px;background:rgba(26,26,26,0.95);backdrop-filter:blur(16px);padding:10px 18px;border-radius:18px;border:1px solid rgba(255,255,255,0.1);box-shadow:0 12px 48px rgba(0,0,0,0.6);color:#eee;font-family:Inter, sans-serif; opacity: 0.5; transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);">
-        <div class="hub-logo" style="width:32px;height:32px;background:#10a37f;border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(16,163,127,0.5)">
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="18 20 18 10 12 20 12 4 6 20 6 14"></polyline></svg>
+      <div class="hub-container" style="display:flex;align-items:center;gap:10px;background:rgba(26,26,26,0.95);backdrop-filter:blur(18px);padding:10px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.1);box-shadow:0 12px 64px rgba(0,0,0,0.7);color:#eee;font-family:Inter, sans-serif; opacity: 0.45; transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1); transform: translateY(0);">
+        <div class="hub-logo" style="width:34px;height:34px;background:#10a37f;border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 25px rgba(16,163,127,0.5)">
+           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="18 20 18 10 12 20 12 4 6 20 6 14"></polyline></svg>
         </div>
-        <div style="width:1px;height:24px;background:rgba(255,255,255,0.1)"></div>
-        <button id="hub-export-btn" title="Export Current Chat" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:10px;border-radius:10px;transition:all 0.2s;display:flex;align-items:center;hover:background:rgba(255,255,255,0.05)">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <div style="width:1px;height:24px;background:rgba(255,255,255,0.15);margin:0 4px;"></div>
+        
+        <button id="hub-md-btn" title="Quick Markdown Export" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:10px;border-radius:12px;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:4px;">
+           <span style="font-size:10px;font-weight:900;opacity:0.6;">MD</span>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         </button>
-        <button id="hub-dash-btn" title="Open Pulse Dashboard" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:10px;border-radius:10px;transition:all 0.2s;display:flex;align-items:center;hover:background:rgba(255,255,255,0.05)">
-           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+
+        <button id="hub-html-btn" title="Quick HTML Export" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:10px;border-radius:12px;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:4px;">
+           <span style="font-size:10px;font-weight:900;opacity:0.6;">HTML</span>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </button>
+
+        <button id="hub-json-btn" title="Quick JSON Export" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:10px;border-radius:12px;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:4px;">
+           <span style="font-size:10px;font-weight:900;opacity:0.6;">JSON</span>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </button>
+
+        <div style="width:1px;height:24px;background:rgba(255,255,255,0.15);margin:0 4px;"></div>
+
+        <button id="hub-dash-btn" title="Pulse Insights" style="background:transparent;border:none;color:#eee;cursor:pointer;padding:12px;border-radius:12px;transition:all 0.2s;display:flex;align-items:center;">
+           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
         </button>
       </div>
     `;
     const container = root.querySelector('.hub-container');
-    container.onmouseenter = () => { container.style.opacity = '1'; container.style.transform = 'translateY(-4px)'; };
-    container.onmouseleave = () => { container.style.opacity = '0.5'; container.style.transform = 'translateY(0)'; };
+    container.onmouseenter = () => { container.style.opacity = '1'; container.style.transform = 'translateY(-6px)'; };
+    container.onmouseleave = () => { container.style.opacity = '0.45'; container.style.transform = 'translateY(0)'; };
     
     document.body.appendChild(root);
-    document.getElementById('hub-export-btn').onclick = () => {
+
+    const trigger = (fmt) => {
       const type = location.hostname.includes('gemini') ? 'gemini' : (location.hostname.includes('claude') ? 'claude' : 'chatgpt');
       chrome.runtime.sendMessage({ 
         type: 'START_EXPORT', 
-        options: { format: 'json', includeAssets: true, scope: `${type}_current`, tabId: 'current' }
+        options: { format: fmt, includeAssets: true, scope: `${type}_current`, tabId: 'current' }
       });
     };
+
+    document.getElementById('hub-md-btn').onclick = () => trigger('md');
+    document.getElementById('hub-html-btn').onclick = () => trigger('html');
+    document.getElementById('hub-json-btn').onclick = () => trigger('json');
     document.getElementById('hub-dash-btn').onclick = () => {
       chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
     };
