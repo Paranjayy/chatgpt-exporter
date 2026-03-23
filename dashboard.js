@@ -110,16 +110,21 @@ function renderHome(filterProject = null) {
     // 1. Projects
     const projects = [...new Set(historyData.map(h => h.project))].filter(Boolean);
     projectList.innerHTML = `
-        <div class="project-item ${!filterProject ? 'active' : ''}" onclick="renderHome(null)">
+        <div class="project-item ${!filterProject ? 'active' : ''}" data-project="all">
             <svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M13 13v8h8v-8h-8zM3 21h8v-8H3v8zM3 3v8h8V3H3zm13.66 2L13 8.66 15.34 11l3.66-3.66L21.34 11 23.66 8.66 20.34 5.34 23.66 2 21.34-0.34 17.66 3.32 14-0.34 11.66 2 13.66 4z"/></svg>
             <span class="name">Show All</span>
         </div>
         ${projects.map(p => `
-            <div class="project-item ${filterProject === p ? 'active' : ''}" onclick="renderHome('${p}')">
+            <div class="project-item ${filterProject === p ? 'active' : ''}" data-project="${p}">
                 <svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
                 <span class="name">${p}</span>
             </div>
         `).join('')}`;
+
+    // Add listeners via delegation (removing inline onclick)
+    projectList.querySelectorAll('.project-item').forEach(el => {
+        el.onclick = () => renderHome(el.dataset.project === 'all' ? null : el.dataset.project);
+    });
 
     // 2. Filtered History
     const filtered = filterProject 
@@ -131,8 +136,8 @@ function renderHome(filterProject = null) {
         recentChatList.innerHTML = '<div class="empty-state">No exports found for this project.</div>';
     } else {
         recentChatList.innerHTML = recent.map(c => `
-            <div class="chat-row">
-                <div class="chat-info" onclick="window.open('https://chatgpt.com/c/'+'${c.id}')">
+            <div class="chat-row" data-id="${c.id}">
+                <div class="chat-info">
                     <div class="chat-title">${c.title}</div>
                     <div class="chat-meta">
                         <span class="tag" style="padding:2px 8px">${c.project}</span>
@@ -143,6 +148,10 @@ function renderHome(filterProject = null) {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
             </div>
         `).join('');
+
+        recentChatList.querySelectorAll('.chat-row').forEach(el => {
+            el.onclick = () => window.open('https://chatgpt.com/c/' + el.dataset.id);
+        });
     }
 
     // 3. Analytics (Filtered Activity Chart & Keywords)
@@ -211,10 +220,18 @@ function renderPrompts() {
                 <div class="text">"${p.promptSnippet}..."</div>
                 <div class="footer">
                     <span style="font-size:11px;color:#8b949e">${p.title}</span>
-                    <button class="btn-copy" onclick="navigator.clipboard.writeText('${p.promptSnippet.replace(/'/g, "\\'")}')">Copy</button>
+                    <button class="btn-copy" data-snippet="${p.promptSnippet.replace(/"/g, '&quot;')}">Copy</button>
                 </div>
             </div>
         `).join('');
+
+        promptHub.querySelectorAll('.btn-copy').forEach(btn => {
+            btn.onclick = () => {
+                navigator.clipboard.writeText(btn.dataset.snippet);
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = 'Copy', 1500);
+            };
+        });
     }
 }
 
@@ -228,17 +245,26 @@ function performSearch(query) {
     if (hits.length === 0) {
         searchResults.innerHTML = '<div class="empty-state">No matches found for "' + query + '"</div>';
     } else {
-        searchResults.innerHTML = hits.map(c => `
-            <div class="chat-row">
+        searchResults.innerHTML = hits.map(c => {
+            const regex = new RegExp(`(${query})`, 'gi');
+            const highlightedTitle = c.title.replace(regex, '<b style="color:#10a37f">$1</b>');
+            const highlightedSnippet = c.promptSnippet.slice(0, 150).replace(regex, '<b style="color:#10a37f">$1</b>');
+
+            return `
+            <div class="chat-row" data-id="${c.id}">
                 <div class="chat-info">
-                    <div class="chat-title">${c.title}</div>
+                    <div class="chat-title">${highlightedTitle}</div>
                     <div class="chat-meta">
                         <span class="tag">${c.project}</span>
-                        <span style="color:#10a37f">${c.promptSnippet.slice(0, 60)}...</span>
+                        <span style="color:#eee">${highlightedSnippet}...</span>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
+
+        searchResults.querySelectorAll('.chat-row').forEach(el => {
+            el.onclick = () => window.open('https://chatgpt.com/c/' + el.dataset.id);
+        });
     }
 }
 

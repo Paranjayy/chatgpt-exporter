@@ -72,13 +72,17 @@
     const btn = document.createElement('div');
     btn.id = 'cgpt-exporter-btn';
     btn.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:10px 12px;border-radius:10px;margin:8px;transition:background 0.2s;color:#c5c5d2;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'">
+      <div class="cgpt-exporter-inner" style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:10px 12px;border-radius:10px;margin:8px;transition:background 0.2s;color:#c5c5d2;">
         <div style="width:24px;height:24px;background:#10a37f;border-radius:6px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(16,163,127,0.3)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         </div>
         <span style="font-weight:500;font-size:14px">Explorer Insights</span>
       </div>
     `;
+
+    const inner = btn.querySelector('.cgpt-exporter-inner');
+    inner.onmouseover = () => { inner.style.background = 'rgba(255,255,255,0.1)'; };
+    inner.onmouseout = () => { inner.style.background = 'none'; };
 
     btn.onclick = () => {
        chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
