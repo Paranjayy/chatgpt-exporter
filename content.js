@@ -93,8 +93,53 @@
     }
   }
 
-  // Ensure UI exists even after page navigations
-  setInterval(injectUI, 2000);
+  // ─── Selection Export (Floating Snippet Button) ──────────────────────────────
+  document.addEventListener('mouseup', (e) => {
+    const selection = window.getSelection().toString().trim();
+    let btn = document.getElementById('cgpt-snippet-btn');
+    
+    if (selection.length > 10) {
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'cgpt-snippet-btn';
+        btn.innerHTML = 'Export Snippet';
+        Object.assign(btn.style, {
+          position: 'absolute',
+          background: '#10a37f',
+          color: 'white',
+          border: 'none',
+          padding: '6px 12px',
+          borderRadius: '20px',
+          fontSize: '12px',
+          fontWeight: '600',
+          cursor: 'pointer',
+          zIndex: '10000',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'none'
+        });
+        document.body.appendChild(btn);
+      }
+      
+      const range = window.getSelection().getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      btn.style.left = `${rect.left + window.scrollX}px`;
+      btn.style.top = `${rect.top + window.scrollY - 40}px`;
+      btn.style.display = 'block';
+      
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        chrome.runtime.sendMessage({ 
+            type: 'SAVE_SNIPPET', 
+            snippet: selection, 
+            source: document.title || 'ChatGPT'
+        });
+        btn.style.display = 'none';
+        window.getSelection().removeAllRanges();
+      };
+    } else if (btn) {
+      btn.style.display = 'none';
+    }
+  });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'GET_TOKEN') {

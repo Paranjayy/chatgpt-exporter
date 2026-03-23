@@ -123,10 +123,10 @@ function renderHome() {
     } else {
         recentChatList.innerHTML = recent.map(c => `
             <div class="chat-row">
-                <div class="chat-info">
+                <div class="chat-info" onclick="window.open('https://chatgpt.com/c/'+'${c.id}')">
                     <div class="chat-title">${c.title}</div>
                     <div class="chat-meta">
-                        <span class="tag">${c.project}</span>
+                        <span class="tag" style="padding:2px 8px">${c.project}</span>
                         <span>${new Date(c.createdAt * 1000).toLocaleDateString()}</span>
                         <span>${c.wordCount || '?'} words</span>
                     </div>
@@ -136,23 +136,39 @@ function renderHome() {
         `).join('');
     }
 
-    // 3. Simple Analytics Overlay (Keywords)
-    const kwMap = {};
-    historyData.forEach(h => {
-        (h.keywords || []).forEach(k => kwMap[k] = (kwMap[k] || 0) + 1);
-    });
-    const sortedKws = Object.entries(kwMap).sort((a,b) => b[1] - a[1]).slice(0, 8);
-    
-    if (sortedKws.length > 0) {
-        const statsPanel = document.querySelector('.charts-placeholder');
-        if (statsPanel) {
-            statsPanel.innerHTML = `
-                <p>Based on your history, here are your most frequent topics:</p>
-                <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:20px">
-                    ${sortedKws.map(([k, count]) => `<span class="tag" style="padding:8px 16px;border-color:#10a37f;color:#10a37f">${k} (${count})</span>`).join('')}
+    // 3. Analytics (Activity Chart & Keywords)
+    const statsPanel = document.querySelector('.charts-placeholder');
+    if (statsPanel) {
+        // SVG Activity Bars
+        const dates = historyData.slice(0, 30).map(h => new Date(h.createdAt * 1000).toLocaleDateString());
+        const dayMap = {};
+        dates.forEach(d => dayMap[d] = (dayMap[d] || 0) + 1);
+        const dayList = Object.entries(dayMap).sort((a,b) => new Date(a[0]) - new Date(b[0])).slice(-7);
+        const max = Math.max(...dayList.map(d => d[1]), 1);
+
+        const bars = dayList.map(([date, count], i) => {
+            const h = (count / max) * 100;
+            return `
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:8px">
+                    <div style="width:20px; height:${h}px; background:#10a37f; border-radius:4px; box-shadow:0 0 8px rgba(16,163,127,0.3)"></div>
+                    <div style="font-size:10px; color:#8b949e; transform:rotate(-45deg); height:30px; margin-top:5px">${date.split('/')[1] + '/' + date.split('/')[0]}</div>
                 </div>
             `;
-        }
+        }).join('');
+
+        const kwMap = {};
+        historyData.forEach(h => { (h.keywords || []).forEach(k => kwMap[k] = (kwMap[k] || 0) + 1); });
+        const sortedKws = Object.entries(kwMap).sort((a,b) => b[1] - a[1]).slice(0, 10);
+
+        statsPanel.innerHTML = `
+            <div style="display:flex; height:150px; align-items:flex-end; gap:16px; margin-bottom:50px; border-bottom:1px solid #30363d; padding-bottom:10px">
+                ${bars}
+            </div>
+            <p style="margin-bottom:15px">Most Frequent Keywords:</p>
+            <div style="display:flex; flex-wrap:wrap; gap:8px">
+                ${sortedKws.map(([k, count]) => `<span class="tag" style="border-color:#10a37f; color:#10a37f; padding:4px 12px">${k} (${count})</span>`).join('')}
+            </div>
+        `;
     }
 }
 

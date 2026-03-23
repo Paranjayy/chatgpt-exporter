@@ -829,5 +829,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'SAVE_SNIPPET') {
+    chrome.storage.local.get(['history'], (res) => {
+      const history = res.history || [];
+      history.unshift({
+        id: 'snippet-' + Date.now(),
+        title: `Snippet from ${msg.source}`,
+        createdAt: Math.floor(Date.now() / 1000),
+        project: 'Library',
+        promptSnippet: msg.snippet,
+        isSnippet: true
+      });
+      chrome.storage.local.set({ history: history.slice(0, 1000) });
+      
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: 'Snippet Saved',
+        message: 'Saved selection to your Insight Dashboard Library.',
+        priority: 1
+      });
+    });
+    return true;
+  }
+
   return true;
 });
