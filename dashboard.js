@@ -106,20 +106,29 @@ function switchTab(tabId) {
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
-function renderHome() {
+function renderHome(filterProject = null) {
     // 1. Projects
     const projects = [...new Set(historyData.map(h => h.project))].filter(Boolean);
-    projectList.innerHTML = projects.map(p => `
-        <div class="project-item">
-            <svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-            <span class="name">${p}</span>
+    projectList.innerHTML = `
+        <div class="project-item ${!filterProject ? 'active' : ''}" onclick="renderHome(null)">
+            <svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M13 13v8h8v-8h-8zM3 21h8v-8H3v8zM3 3v8h8V3H3zm13.66 2L13 8.66 15.34 11l3.66-3.66L21.34 11 23.66 8.66 20.34 5.34 23.66 2 21.34-0.34 17.66 3.32 14-0.34 11.66 2 13.66 4z"/></svg>
+            <span class="name">Show All</span>
         </div>
-    `).join('') || '<div style="padding:10px;color:#8b949e">No projects detected.</div>';
+        ${projects.map(p => `
+            <div class="project-item ${filterProject === p ? 'active' : ''}" onclick="renderHome('${p}')">
+                <svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                <span class="name">${p}</span>
+            </div>
+        `).join('')}`;
 
-    // 2. Recent Chats
-    const recent = historyData.slice(0, 10);
+    // 2. Filtered History
+    const filtered = filterProject 
+        ? historyData.filter(h => h.project === filterProject)
+        : historyData;
+
+    const recent = filtered.slice(0, 50);
     if (recent.length === 0) {
-        recentChatList.innerHTML = '<div class="empty-state">No exports yet. Run an export from the popup.</div>';
+        recentChatList.innerHTML = '<div class="empty-state">No exports found for this project.</div>';
     } else {
         recentChatList.innerHTML = recent.map(c => `
             <div class="chat-row">
@@ -136,11 +145,12 @@ function renderHome() {
         `).join('');
     }
 
-    // 3. Analytics (Activity Chart & Keywords)
+    // 3. Analytics (Filtered Activity Chart & Keywords)
     const statsPanel = document.querySelector('.charts-placeholder');
     if (statsPanel) {
         // SVG Activity Bars
-        const dates = historyData.slice(0, 30).map(h => new Date(h.createdAt * 1000).toLocaleDateString());
+        const dates = filtered.slice(0, 30).map(h => new Date(h.createdAt * 1000).toLocaleDateString());
+        // ... (rest of logic remains same but using 'filtered' data)
         const dayMap = {};
         dates.forEach(d => dayMap[d] = (dayMap[d] || 0) + 1);
         const dayList = Object.entries(dayMap).sort((a,b) => new Date(a[0]) - new Date(b[0])).slice(-7);
@@ -157,7 +167,7 @@ function renderHome() {
         }).join('');
 
         const kwMap = {};
-        historyData.forEach(h => { (h.keywords || []).forEach(k => kwMap[k] = (kwMap[k] || 0) + 1); });
+        filtered.forEach(h => { (h.keywords || []).forEach(k => kwMap[k] = (kwMap[k] || 0) + 1); });
         const sortedKws = Object.entries(kwMap).sort((a,b) => b[1] - a[1]).slice(0, 10);
 
         statsPanel.innerHTML = `
