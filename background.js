@@ -197,7 +197,19 @@ async function startExport(options) {
       const token = exportState.token || await getTokenFromTab();
       if (!token && options.scope !== 'project') throw new Error('No ChatGPT authentication token found. Please open/refresh ChatGPT tab.');
       
-      const convs = await fetchConversationList(token, options);
+      let convs = [];
+      if (options.scope === 'projects_only') {
+        const projectIds = exportState.projects.filter(p => (p.id.startsWith('g-p-') || p.gizmoId) && !p.source).map(p => p.id);
+        for (const pid of projectIds) {
+          try {
+            const items = await fetchConversationList(token, { scope: 'project', projectId: pid });
+            convs.push(...items);
+          } catch(e) { exportState.errors.push(`Project ${pid}: ${e.message}`); }
+        }
+      } else {
+        convs = await fetchConversationList(token, options);
+      }
+      
       exportState.total = convs.length;
       exportState.phase = 'fetching_chats';
       sendStatus();
@@ -209,9 +221,7 @@ async function startExport(options) {
         try {
            const full = await chatgptFetch(`/conversation/${conv.id}`, token);
            exportState.fullConversations.push(full);
-        } catch (e) {
-           exportState.errors.push(`${conv.title}: ${e.message}`);
-        }
+        } catch (e) { exportState.errors.push(`${conv.title}: ${e.message}`); }
         exportState.fetched++;
         sendStatus();
         await sleep(Math.random() * 200 + 100);
@@ -250,10 +260,30 @@ async function finalizeZip(options) {
     for (const chat of convs) {
       if (cancelSignal) break;
       const safeTitle = safeFilename(chat.title || 'chat');
-      if (fmt === 'json') files.push({ name: `${safeTitle}.json`, content: JSON.stringify(chat, null, 2) });
-      else if (fmt === 'md') files.push({ name: `${safeTitle}.md`, content: formatToMarkdown(chat) });
-      else if (fmt === 'html') files.push({ name: `${safeTitle}.html`, content: formatToHTML(chat) });
-      else if (fmt === 'csv') files.push({ name: `${safeTitle}.csv`, content: formatToCSV(chat) });
+      let content;
+      if (fmt === 'json') content = JSON.stringify(chat, null, 2);
+      else if (fmt === 'md') content = formatToMarkdown(chat);
+      else if (fmt === 'html') content = formatToHTML(chat);
+      else content = formatToCSV(chat);
+      
+      files.push({ name: `${safeTitle}.${fmt}`, content });
+
+      // Categorized Asset Processing
+      if (options.includeAssets && (chat.mapping || chat.messages)) {
+        const msgs = chat.mapping ? Object.values(chat.mapping).filter(n => n.message).map(n => n.message) : chat.messages;
+        for (const m of msgs) {
+          if (m.metadata?.attachments) {
+            for (const a of m.metadata.attachments) {
+              if (a.url) {
+                const ext = a.name?.split('.').pop() || 'png';
+                const isImg = ['png','jpg','jpeg','gif','webp','svg'].includes(ext.toLowerCase());
+                const folder = isImg ? 'images/' : (['pdf','txt','doc','docx'].includes(ext.toLowerCase()) ? 'docs/' : 'other/');
+                files.push({ name: `assets/${folder}${a.name || `file_${Math.random().toString(36).slice(2,8)}.${ext}`}`, url: a.url });
+              }
+            }
+          }
+        }
+      }
       exportState.saved++;
       sendStatus();
     }
@@ -280,11 +310,14 @@ function formatToMarkdown(chat) {
     const role = (m.author?.role || m.role || 'user').toUpperCase();
     let text = m.content?.parts?.join('\n') || m.text || '';
     
-    // Obsidian / Markdown Asset Linking Logic
+    // Categorized Obsidian Interlinking
     if (m.metadata?.attachments) {
        m.metadata.attachments.forEach((a, i) => {
+         const ext = a.name?.split('.').pop() || 'png';
+         const isImg = ['png','jpg','jpeg','gif','webp','svg'].includes(ext.toLowerCase());
+         const folder = isImg ? 'images/' : (['pdf','txt','doc','docx'].includes(ext.toLowerCase()) ? 'docs/' : 'other/');
          const name = a.name || `attachment_${i}`;
-         text += `\n\n![[assets/${name}]]\n*Source: ${a.url || 'Internal'}*`;
+         text += `\n\n![[assets/${folder}${name}]]\n*Source: ${a.url || 'Internal'}*`;
        });
     }
 
