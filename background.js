@@ -135,24 +135,42 @@ async function startExport(options) {
 
   try {
     if (options.scope.includes('current')) {
-      // Single Tab Scraping
+      // ... same
       let tabId = options.tabId;
-      if (tabId === 'active' || tabId === 'current') {
-         tabId = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
-      }
+      if (tabId === 'active' || tabId === 'current') tabId = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
       const type = options.scope.split('_')[0];
-      exportState.currentChatTitle = 'Connecting to harvester...';
-      sendStatus();
-
       const chat = type === 'gemini' ? await getGeminiChatFromTab(tabId) : await getClaudeChatFromTab(tabId);
-      if (chat) {
-        exportState.fullConversations = [chat];
-        exportState.currentChatTitle = chat.title;
-      }
+      if (chat) exportState.fullConversations = [chat];
       exportState.total = exportState.fullConversations.length;
     } 
+    else if (options.selectedIds) {
+      // Selective Picking
+      const ids = options.selectedIds;
+      const targets = exportState.projects.filter(p => ids.includes(p.id));
+      exportState.total = targets.length;
+      exportState.phase = 'fetching_chats';
+      for (const entry of targets) {
+        if (cancelSignal) break;
+        exportState.currentChatTitle = `Scraping Selected: ${entry.title}`; sendStatus();
+        try {
+          const type = entry.source || (entry.id.includes('g-p-') ? 'chatgpt' : 'claude');
+          const url = type === 'gemini' ? `https://gemini.google.com/app/${entry.id}` : 
+                      (type === 'claude' ? `https://claude.ai/chat/${entry.id}` : `https://chatgpt.com/c/${entry.id}`);
+          
+          let chat;
+          if (type === 'chatgpt') {
+            const token = exportState.token || await getTokenFromTab();
+            chat = await chatgptFetch(`/conversation/${entry.id}`, token);
+          } else {
+            chat = type === 'gemini' ? await navigateAndScrapeGemini(url) : await navigateAndScrapeClaude(url);
+          }
+          if (chat) exportState.fullConversations.push(chat);
+        } catch (e) { exportState.errors.push(`${entry.title}: ${e.message}`); }
+        exportState.fetched++; sendStatus();
+      }
+    }
     else if (options.scope.includes('history')) {
-      // Bulk Scraping
+      // ... same
       const type = options.scope.split('_')[0];
       const history = exportState.projects.filter(p => !p.source || p.source === type);
       exportState.total = history.length;
@@ -251,12 +269,25 @@ async function finalizeZip(options) {
 
 // ─── Formatting helpers ────────────────────────────────────────────────────────
 function formatToMarkdown(chat) {
-  let md = `# ${chat.title || 'Chat'}\n\n`;
-  const msgs = chat.mapping ? Object.values(chat.mapping).filter(n => n.message).map(n => n.message) : chat.messages;
+  let md = `---\ntitle: ${chat.title || 'Untitled'}\nexported: ${new Date().toISOString()}\n---\n\n# ${chat.title || 'Chat'}\n\n`;
+  const msgs = chat.mapping ? 
+    Object.values(chat.mapping).filter(n => n.message && n.message.author.role !== 'system').map(n => n.message) : 
+    chat.messages;
+  
   if (!msgs) return md;
+  
   for (const m of msgs) {
     const role = (m.author?.role || m.role || 'user').toUpperCase();
-    const text = m.content?.parts?.join('\n') || m.text || '';
+    let text = m.content?.parts?.join('\n') || m.text || '';
+    
+    // Obsidian / Markdown Asset Linking Logic
+    if (m.metadata?.attachments) {
+       m.metadata.attachments.forEach((a, i) => {
+         const name = a.name || `attachment_${i}`;
+         text += `\n\n![[assets/${name}]]\n*Source: ${a.url || 'Internal'}*`;
+       });
+    }
+
     md += `### ${role}\n${text}\n\n---\n\n`;
   }
   return md;

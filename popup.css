@@ -130,14 +130,87 @@ header {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.section label {
-  font-size: 11px;
-  font-weight: 600;
+.subtitle {
+  font-size: 10px;
+  font-weight: 800;
   color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 8px;
-  display: block;
+  letter-spacing: 0.1em;
+  margin-bottom: -10px;
+}
+
+.radio-card {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.19, 1, 0.22, 1);
+  position: relative;
+}
+
+.radio-card:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.1);
+  transform: translateX(4px);
+}
+
+.radio-card input {
+  position: absolute;
+  opacity: 0;
+}
+
+.radio-card .card-content {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.radio-card .card-content b {
+  color: var(--text);
+  margin-right: 4px;
+}
+
+.radio-card input:checked + .card-content {
+  color: var(--text);
+}
+
+.radio-card input:checked + .card-content::before {
+  content: '🧬';
+  margin-right: 8px;
+  filter: drop-shadow(0 0 4px var(--primary));
+}
+
+.radio-card:has(input:checked) {
+  border-color: var(--primary);
+  background: rgba(16,163,127,0.08);
+}
+
+.selective-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.selective-item:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.selective-item input {
+  accent-color: var(--primary);
+}
+
+.selective-item span {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Format Chips */

@@ -78,6 +78,8 @@ const btnRestart   = document.getElementById('btn-restart');
 const btnCancel    = document.getElementById('btn-cancel');
 const statCurrent  = document.getElementById('stat-current');
 const projectPicker  = document.getElementById('project-picker');
+const selectivePicker = document.getElementById('selective-picker');
+const selectiveList   = document.getElementById('selective-list');
 const projectSelect  = document.getElementById('project-select');
 const btnRefresh     = document.getElementById('btn-refresh-projects');
 
@@ -96,18 +98,30 @@ document.querySelectorAll('.scope-tab').forEach(tab => {
 
     updateExportButtonLabel();
 
-    if (currentScope === 'project' || currentScope.includes('history')) {
-       // Auto-load if switching to a history/project tab
+    if (currentScope === 'project' || currentScope.includes('history') || currentScope === 'custom') {
        if (projectsCache.length === 0) loadProjects();
     }
 
-    if (currentScope === 'project') {
-      projectPicker.style.display = 'flex';
-    } else {
-      projectPicker.style.display = 'none';
-    }
+    projectPicker.style.display = currentScope === 'project' ? 'flex' : 'none';
+    selectivePicker.style.display = currentScope === 'custom' ? 'flex' : 'none';
+    
+    if (currentScope === 'custom') renderSelectiveOptions();
   });
 });
+
+function renderSelectiveOptions(projects = projectsCache) {
+  if (!selectiveList) return;
+  if (projects.length === 0) {
+    selectiveList.innerHTML = '<small style="opacity:0.3; padding:10px; display:block;">No chats discovered yet. Visit ChatGPT/Gemini/Claude first.</small>';
+    return;
+  }
+  selectiveList.innerHTML = projects.map(p => `
+    <label class="selective-item">
+      <input type="checkbox" value="${p.id}" class="selective-check">
+      <span>${p.title || p.id}</span>
+    </label>
+  `).join('');
+}
 
 if (btnCancel) btnCancel.onclick = () => {
    chrome.runtime.sendMessage({ type: 'CANCEL_EXPORT' });
@@ -121,13 +135,14 @@ function updateExportButtonLabel() {
     gemini_current: 'Export Current Gemini Chat',
     gemini_history: 'Export Entire History',
     claude_current: 'Export Current Claude Chat',
-    claude_history: 'Export Entire History'
+    claude_history: 'Export Entire History',
+    custom: 'Export Selected Individual'
   };
   btnExport.innerHTML = `
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
-    ${labels[currentScope] || 'Export'}
+    ${labels[currentScope] || 'Export Everything'}
   `;
 }
 
@@ -306,6 +321,15 @@ btnExport.addEventListener('click', () => {
   const includeAssets  = document.getElementById('opt-assets').checked;
   const projectId      = currentScope === 'project' ? projectSelect.value : null;
 
+  let selectedIds = null;
+  if (currentScope === 'custom') {
+    selectedIds = Array.from(document.querySelectorAll('.selective-check:checked')).map(cb => cb.value);
+    if (selectedIds.length === 0) {
+      log('⚠ Please select at least one chat.');
+      return;
+    }
+  }
+
   if (currentScope === 'project' && !projectId) {
     log('⚠ Please select a project first.');
     return;
@@ -333,6 +357,7 @@ btnExport.addEventListener('click', () => {
       includeAssets, 
       scope: currentScope, 
       projectId, 
+      selectedIds,
       tabId: activeTabId 
     },
   }, () => {

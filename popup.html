@@ -48,11 +48,13 @@
         </div>
       </div>
 
+      <div class="subtitle">Select Scope</div>
       <div class="section scope-container">
         <div class="tabs">
           <button class="scope-tab active" data-scope="all">Full History</button>
           <button class="scope-tab" data-scope="projects_only">Projects</button>
-          <button class="scope-tab" data-scope="project">Select Project</button>
+          <button class="scope-tab" data-scope="project">Selected Project</button>
+          <button class="scope-tab" data-scope="custom">Select Individual</button>
         </div>
         
         <div id="project-picker" class="picker-panel" style="display:none;">
@@ -65,6 +67,40 @@
             </button>
           </div>
         </div>
+
+        <div id="selective-picker" class="picker-panel" style="display:none;">
+           <div class="list-container" id="selective-list" style="max-height:160px; overflow-y:auto; border:1px solid rgba(255,255,255,0.05); border-radius:10px; padding:4px;">
+              <small style="opacity:0.3; padding:10px; display:block;">Discovering conversations...</small>
+           </div>
+        </div>
+      </div>
+
+      <div class="subtitle">Export Format</div>
+      <div class="section format-grid" style="display:flex; flex-direction:column; gap:8px;">
+        <label class="radio-card">
+          <input type="radio" name="format" value="json" checked>
+          <div class="card-content">
+             <b>JSON</b> &middot; Raw data for developers
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="format" value="md">
+          <div class="card-content">
+             <b>MARKDOWN</b> &middot; Perfect for Obsidian / Notion
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="format" value="html">
+          <div class="card-content">
+             <b>HTML</b> &middot; Self-contained styled archive
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="format" value="csv">
+          <div class="card-content">
+             <b>SPREADSHEET (CSV)</b> &middot; Row/column table format
+          </div>
+        </label>
       </div>
 
       <div class="section options">
