@@ -107,7 +107,7 @@ function switchTab(tabId) {
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
 function renderHome() {
-    // Projects
+    // 1. Projects
     const projects = [...new Set(historyData.map(h => h.project))].filter(Boolean);
     projectList.innerHTML = projects.map(p => `
         <div class="project-item">
@@ -116,7 +116,7 @@ function renderHome() {
         </div>
     `).join('') || '<div style="padding:10px;color:#8b949e">No projects detected.</div>';
 
-    // Recent Chats
+    // 2. Recent Chats
     const recent = historyData.slice(0, 10);
     if (recent.length === 0) {
         recentChatList.innerHTML = '<div class="empty-state">No exports yet. Run an export from the popup.</div>';
@@ -128,11 +128,31 @@ function renderHome() {
                     <div class="chat-meta">
                         <span class="tag">${c.project}</span>
                         <span>${new Date(c.createdAt * 1000).toLocaleDateString()}</span>
+                        <span>${c.wordCount || '?'} words</span>
                     </div>
                 </div>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
             </div>
         `).join('');
+    }
+
+    // 3. Simple Analytics Overlay (Keywords)
+    const kwMap = {};
+    historyData.forEach(h => {
+        (h.keywords || []).forEach(k => kwMap[k] = (kwMap[k] || 0) + 1);
+    });
+    const sortedKws = Object.entries(kwMap).sort((a,b) => b[1] - a[1]).slice(0, 8);
+    
+    if (sortedKws.length > 0) {
+        const statsPanel = document.querySelector('.charts-placeholder');
+        if (statsPanel) {
+            statsPanel.innerHTML = `
+                <p>Based on your history, here are your most frequent topics:</p>
+                <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:20px">
+                    ${sortedKws.map(([k, count]) => `<span class="tag" style="padding:8px 16px;border-color:#10a37f;color:#10a37f">${k} (${count})</span>`).join('')}
+                </div>
+            `;
+        }
     }
 }
 
