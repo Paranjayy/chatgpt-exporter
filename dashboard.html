@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatGPT Exporter | Insight Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body class="dark">
+    <nav class="sidebar">
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <span>Insights</span>
+        </div>
+        <div class="nav-items">
+            <button class="nav-item active" data-tab="home">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                Home
+            </button>
+            <button class="nav-item" data-tab="search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Search
+            </button>
+            <button class="nav-item" data-tab="stats">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                Analytics
+            </button>
+            <button class="nav-item" data-tab="library">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                Prompt Lab
+            </button>
+        </div>
+        <div class="sidebar-footer">
+            <button id="btn-sync">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Sync All
+            </button>
+        </div>
+    </nav>
+
+    <main class="content">
+        <header class="main-header">
+            <div class="search-container">
+                <input type="text" id="main-search" placeholder="Search conversations, prompts, or outputs...">
+                <kbd>/</kbd>
+            </div>
+            <div class="header-actions">
+                <div class="export-stat">
+                    <span class="label">Total Exported</span>
+                    <span class="value" id="stat-total-val">0</span>
+                </div>
+                <div class="user-pill">
+                    <div class="avatar">K</div>
+                    <span>Khachar</span>
+                </div>
+            </div>
+        </header>
+
+        <section id="tab-home" class="tab-pane active">
+            <div class="hero-stats">
+                <div class="stat-card glow">
+                    <h3>Conversations</h3>
+                    <div class="stat-value" id="card-conv-count">0</div>
+                    <div class="stat-sub">Across all projects</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Library Usage</h3>
+                    <div class="stat-value" id="card-prompt-count">0</div>
+                    <div class="stat-sub">Unique prompt signatures</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Storage Saved</h3>
+                    <div class="stat-value" id="card-storage-val">0 MB</div>
+                    <div class="stat-sub">Local cached data</div>
+                </div>
+            </div>
+
+            <div class="feed-grid">
+                <div class="recent-projects panel">
+                    <h2>Recent Projects</h2>
+                    <div class="project-list" id="project-list">
+                        <!-- Projects injected here -->
+                    </div>
+                </div>
+                <div class="recent-chats panel">
+                    <h2>Latest Exports</h2>
+                    <div class="chat-list" id="recent-chat-list">
+                        <div class="empty-state">No exports yet. Run an export from the popup to see results here.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-search" class="tab-pane">
+            <div class="panel">
+                <h2>Deep Search</h2>
+                <div id="search-results" class="search-grid"></div>
+            </div>
+        </section>
+
+        <section id="tab-stats" class="tab-pane">
+            <div class="panel">
+                <h2>Analytics</h2>
+                <div class="charts-placeholder">
+                    <p>Analytics are being prepared based on your export history.</p>
+                </div>
+            </div>
+        </section>
+        
+        <section id="tab-library" class="tab-pane">
+            <div class="panel">
+                <h2>Prompt Lab</h2>
+                <div class="lab-grid" id="prompt-hub">
+                     <!-- Prompts injected here -->
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

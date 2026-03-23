@@ -1,0 +1,23 @@
+# Local build/temp
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Private keys/tokens
+*.pem
+*.key
+
+# Exports
+chatgpt-export-*.zip
+chats/
+projects/
+assets/
+conversations.json
+index.html
+
+# IDE
+.vscode/
+.idea/
+.gemini/
+brain/
+*~

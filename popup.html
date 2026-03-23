@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatGPT Exporter</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <img src="icons/icon48.png" alt="" width="22" height="22">
+        <span class="logo-text">ChatGPT <strong>Exporter</strong></span>
+      </div>
+      <div class="header-right">
+        <button id="btn-insights" title="Open Analytical Dashboard">
+          <svg style="color:#10a37f" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </button>
+        <div id="status-badge" class="badge">Ready</div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="content">
+
+      <!-- ── Setup screen ─────────────────────────────────── -->
+      <div id="screen-setup" class="screen active">
+        <p class="hint">Exports <strong>all conversations</strong> automatically — prompts, responses, attachments, images.</p>
+
+        <!-- Scope -->
+        <div class="section-label">Scope</div>
+        <div class="scope-tabs" id="scope-tabs">
+          <button class="scope-tab active" data-scope="all">All Chats</button>
+          <button class="scope-tab" data-scope="projects_only">Projects Only</button>
+          <button class="scope-tab" data-scope="project">One Project</button>
+        </div>
+
+        <!-- Project picker (shown when scope=project) -->
+        <div id="project-picker" style="display:none;">
+          <div class="select-wrap">
+            <select id="project-select" class="project-select">
+              <option value="">Loading projects…</option>
+            </select>
+            <svg class="select-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <button class="btn-refresh" id="btn-refresh-projects" title="Refresh project list">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          </button>
+        </div>
+
+        <!-- Format -->
+        <div class="section-label">Export Format</div>
+        <div class="format-grid">
+          <label class="format-card" for="fmt-json">
+            <input type="radio" id="fmt-json" name="format" value="json" checked>
+            <span class="fmt-icon">{ }</span>
+            <span class="fmt-name">JSON</span>
+            <span class="fmt-desc">Raw data, re-importable</span>
+          </label>
+          <label class="format-card" for="fmt-md">
+            <input type="radio" id="fmt-md" name="format" value="markdown">
+            <span class="fmt-icon">md</span>
+            <span class="fmt-name">Markdown</span>
+            <span class="fmt-desc">One file per chat</span>
+          </label>
+          <label class="format-card" for="fmt-html">
+            <input type="radio" id="fmt-html" name="format" value="html">
+            <span class="fmt-icon">↗</span>
+            <span class="fmt-name">HTML</span>
+            <span class="fmt-desc">Searchable webpage</span>
+          </label>
+        </div>
+
+        <!-- Options -->
+        <div class="section-label">Options</div>
+        <div class="options-list">
+          <label class="toggle-row">
+            <span class="toggle-label">
+              <span>Download attachments &amp; images</span>
+              <span class="toggle-sub">Includes generated images, uploaded files</span>
+            </span>
+            <div class="toggle-wrap">
+              <input type="checkbox" id="opt-assets" checked>
+              <div class="toggle"></div>
+            </div>
+          </label>
+        </div>
+
+        <button class="btn-primary" id="btn-export">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export All Chats
+        </button>
+        <p class="notice">⚠️ Must be logged into <a href="https://chatgpt.com" target="_blank">chatgpt.com</a> in this browser.</p>
+      </div>
+
+      <!-- ── Progress screen ─────────────────────────────── -->
+      <div id="screen-progress" class="screen">
+        <div class="phase-label" id="phase-label">Initializing…</div>
+
+        <div class="progress-ring-wrap">
+          <svg class="ring" width="110" height="110" viewBox="0 0 110 110">
+            <circle class="ring-track" cx="55" cy="55" r="47" />
+            <circle class="ring-fill" id="ring-fill" cx="55" cy="55" r="47"
+              stroke-dasharray="295.3"
+              stroke-dashoffset="295.3" />
+          </svg>
+          <div class="ring-center">
+            <div class="ring-pct" id="ring-pct">0%</div>
+          </div>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat">
+            <div class="stat-val" id="stat-total">—</div>
+            <div class="stat-lbl">Total</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="stat-fetched">0</div>
+            <div class="stat-lbl">Fetched</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="stat-dl">0</div>
+            <div class="stat-lbl">In ZIP</div>
+          </div>
+        </div>
+
+        <div class="log-box" id="log-box"></div>
+      </div>
+
+      <!-- ── Done screen ─────────────────────────────────── -->
+      <div id="screen-done" class="screen">
+        <div class="done-icon">✓</div>
+        <div class="done-title">Export Complete!</div>
+        <div class="done-meta" id="done-meta"></div>
+        <div id="done-errors" class="errors-panel" style="display:none;"></div>
+        <button class="btn-primary" id="btn-restart">Export Again</button>
+      </div>
+
+    </main>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
