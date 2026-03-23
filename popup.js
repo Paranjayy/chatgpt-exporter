@@ -24,11 +24,28 @@ async function detectPlatform() {
     tabs[1].textContent = 'Discovered History';
     tabs[1].dataset.scope = 'gemini_history';
     tabs[1].style.display = 'block';
-    tabs[2].style.display = 'none'; // Individual project selection still pending for Gemini
+    tabs[2].style.display = 'none'; 
     
     currentScope = 'gemini_current';
     updateExportButtonLabel();
-    loadProjects(); // This will trigger sidebar discovery
+    loadProjects('gemini'); 
+  } else if (tab.url.includes('claude.ai')) {
+    currentPlatform = 'claude';
+    document.body.dataset.platform = 'claude';
+    if (platformNameEl) platformNameEl.textContent = 'Claude';
+    if (noticeEl) noticeEl.textContent = '⚠️ Scrapes Claude live chats & sidebar history';
+    
+    // Enable Claude history discovery
+    tabs[0].textContent = 'Current Chat';
+    tabs[0].dataset.scope = 'claude_current';
+    tabs[1].textContent = 'Discovered History';
+    tabs[1].dataset.scope = 'claude_history';
+    tabs[1].style.display = 'block';
+    tabs[2].style.display = 'none'; 
+    
+    currentScope = 'claude_current';
+    updateExportButtonLabel();
+    loadProjects('claude');
   } else {
     currentPlatform = 'chatgpt';
     document.body.dataset.platform = 'chatgpt';
@@ -92,7 +109,9 @@ function updateExportButtonLabel() {
     projects_only: 'Export Projects Only',
     project: 'Export This Project',
     gemini_current: 'Export Current Gemini Chat',
-    gemini_history: 'Export Discovered History'
+    gemini_history: 'Export Discovered History',
+    claude_current: 'Export Current Claude Chat',
+    claude_history: 'Export Discovered History'
   };
   btnExport.innerHTML = `
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -103,11 +122,11 @@ function updateExportButtonLabel() {
 }
 
 // ─── Project Loading ──────────────────────────────────────────────────────────
-async function loadProjects() {
+async function loadProjects(platform = currentPlatform) {
   projectSelect.innerHTML = '<option value="">⏳ Loading projects…</option>';
   btnRefresh.classList.add('spinning');
   try {
-    const resp = await chrome.runtime.sendMessage({ type: 'LOAD_PROJECTS' });
+    const resp = await chrome.runtime.sendMessage({ type: 'LOAD_PROJECTS', platform });
     projectsCache = resp?.projects || [];
     if (resp?.raw) log(`ℹ Project API: ${JSON.stringify(resp.raw).slice(0, 120)}`);
     renderProjectOptions();
@@ -129,7 +148,7 @@ function renderProjectOptions(projects = projectsCache) {
   ).join('');
 }
 
-btnRefresh.addEventListener('click', loadProjects);
+btnRefresh.addEventListener('click', () => loadProjects(currentPlatform));
 
 // ─── Screen switching ─────────────────────────────────────────────────────────
 function showScreen(name) {

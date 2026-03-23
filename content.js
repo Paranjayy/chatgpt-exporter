@@ -206,21 +206,48 @@
               }
             }
           });
+      } else if (location.hostname.includes('claude.ai')) {
+          // CLAUDE SIDEBAR DISCOVERY
+          const links = document.querySelectorAll('a[href^="/chat/"]');
+          links.forEach(a => {
+              const href = a.getAttribute('href') || '';
+              const id = href.split('/').pop();
+              const title = a.innerText.trim();
+              if (id && title && title.length > 2) {
+                  map[id] = { id, title, source: 'claude' };
+              }
+          });
       }
       sendResponse({ projects: Object.values(map) });
+      return true;
     }
 
-    if (msg.type === 'SCRAPE_GEMINI_CHAT') {
+    if (msg.type === 'SCRAPE_GEMINI_CHAT' || msg.type === 'SCRAPE_CLAUDE_CHAT') {
       const messages = [];
       const now = Date.now() / 1000;
+      const isClaude = location.hostname.includes('claude.ai');
       
-      const allPossible = document.querySelectorAll('.query-text, .user-query, .message-content, .model-response-text, .inline-answer, [role="article"], .prompt-content, .response-content');
+      // Selectors for both Claude and Gemini
+      const selectors = isClaude 
+        ? '.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .message-content'
+        : '.query-text, .user-query, .message-content, .model-response-text, .inline-answer, [role="article"], .prompt-content, .response-content';
+      
+      const allPossible = document.querySelectorAll(selectors);
       
       allPossible.forEach((el, idx) => {
         const text = el.innerText.trim();
-        if (text.length < 2 || text.includes('Where should we start?')) return;
+        if (text.length < 2) return;
+        if (!isClaude && text.includes('Where should we start?')) return;
 
-        const isUser = el.classList.contains('query-text') || 
+        let isUser = false;
+        let isAssistant = false;
+
+        if (isClaude) {
+            // Claude uses specific background colors or structural hints for User vs Assistant
+            isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.matches('.bg-bg-200, .bg-bg-300');
+            isAssistant = el.closest('.font-claude-message') || !isUser;
+        } else {
+            isUser = el.classList.contains('query-text') || 
                        el.classList.contains('user-query') ||
                        el.classList.contains('prompt-content') ||
                        el.closest('.query-text') ||
@@ -228,7 +255,7 @@
                        el.matches('[aria-label*="user"]') ||
                        el.closest('[aria-label*="user"]');
 
-        const isAssistant = el.classList.contains('message-content') || 
+            isAssistant = el.classList.contains('message-content') || 
                             el.classList.contains('model-response-text') ||
                             el.classList.contains('response-content') ||
                             el.classList.contains('inline-answer') ||
@@ -238,13 +265,14 @@
                             el.closest('[aria-label*="assistant"]') ||
                             el.matches('[aria-label*="Gemini"]') ||
                             el.closest('[aria-label*="Gemini"]');
+        }
 
         if (isUser || isAssistant) {
            messages.push({
              role: isUser ? 'user' : 'assistant',
              text: text,
              images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-             // ADD INCREMENTAL TIMESTAMP TO PREVENT COLLISION
+             // INCREMENTAL TIMESTAMP TO PREVENT COLLISION
              created: now + (idx * 0.001) 
            });
         }

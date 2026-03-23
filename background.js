@@ -4,7 +4,8 @@
 /** Platform specific domains */
 const DOMAINS = {
   CHATGPT: 'chatgpt.com',
-  GEMINI: 'gemini.google.com'
+  GEMINI: 'gemini.google.com',
+  CLAUDE: 'claude.ai'
 };
 
 const CHATGPT_BASE_URL = 'https://chatgpt.com/backend-api';
@@ -148,35 +149,63 @@ async function navigateAndScrapeGemini(url) {
 async function getGeminiChatFromTab(tabId) {
   return new Promise(async (resolve, reject) => {
     try {
-      // First try messaging
       chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_GEMINI_CHAT' }, (resp) => {
-        if (!chrome.runtime.lastError && resp?.chat) {
-          return resolve(resp.chat);
+        if (!chrome.runtime.lastError && resp?.messages) {
+          const chat = { 
+              id: 'gemini-'+Date.now(), 
+              title: 'Google Gemini', 
+              mapping: resp.messages.map((m,i)=>({ id:i, message:{ author:{ role:m.role }, content:{ parts:[m.text], images:m.images||[] }, create_time:m.created }})) 
+          };
+          return resolve(chat);
         }
-        
-        // Fallback: Execute script directly if messaging fails
-        chrome.scripting.executeScript({
-          target: { tabId: tabId },
-          func: () => {
-             // In-place scraper function for emergency
-             const msgs = [];
-             const items = document.querySelectorAll('.query-text, .message-content, .model-response-text, .user-query, .model-response, [role="article"]');
-             items.forEach(el => {
-                const isUser = el.classList.contains('query-text') || el.classList.contains('user-query') || el.closest('[aria-label*="user"]');
-                msgs.push({ role: isUser?'user':'assistant', text: el.innerText.trim() });
-             });
-             return { chat: { id: 'gemini-fallback-'+Date.now(), title: document.title, mapping: msgs.map((m,i)=>({ id:i, message:{ author:{ role:m.role }, content:{ parts:[m.text] } }})) } };
-          }
-        }, (results) => {
-          if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-          if (results?.[0]?.result?.chat) resolve(results[0].result.chat);
-          else reject(new Error('Goated Harvester failed to find chat content on this page. Refresh and try again?'));
-        });
+        reject(new Error('Gemini Harvester failed to respond. Refresh and try again?'));
       });
-    } catch (e) {
-      reject(e);
-    }
+    } catch (e) { reject(e); }
   });
+}
+
+async function getClaudeChatFromTab(tabId) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_CLAUDE_CHAT' }, (resp) => {
+          if (!chrome.runtime.lastError && resp?.messages) {
+            const chat = { 
+                id: 'claude-'+Date.now(), 
+                title: 'Claude AI', 
+                mapping: resp.messages.map((m,i)=>({ id:i, message:{ author:{ role:m.role }, content:{ parts:[m.text], images:m.images||[] }, create_time:m.created }})) 
+            };
+            return resolve(chat);
+          }
+          reject(new Error('Claude Harvester failed to respond. Refresh and try again?'));
+        });
+      } catch (e) { reject(e); }
+    });
+}
+
+async function navigateAndScrapeGemini(url) {
+    const tab = await chrome.tabs.create({ url, active: false });
+    await sleep(2500); // Wait for Gemini's heavy React/MD3 load
+    try {
+        const chat = await getGeminiChatFromTab(tab.id);
+        chrome.tabs.remove(tab.id);
+        return chat;
+    } catch (e) {
+        chrome.tabs.remove(tab.id);
+        throw e;
+    }
+}
+
+async function navigateAndScrapeClaude(url) {
+    const tab = await chrome.tabs.create({ url, active: false });
+    await sleep(3000); // Claude is React-heavy
+    try {
+        const chat = await getClaudeChatFromTab(tab.id);
+        chrome.tabs.remove(tab.id);
+        return chat;
+    } catch (e) {
+        chrome.tabs.remove(tab.id);
+        throw e;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -263,49 +292,59 @@ async function getProjectsFromContentScript() {
   return [];
 }
 
-async function loadProjects() {
-  const token = exportState.token || await getTokenFromTab();
-  if (token) exportState.token = token;
+async function loadProjects(type = 'chatgpt') {
+  if (type === 'chatgpt') {
+    const token = exportState.token || await getTokenFromTab();
+    if (token) exportState.token = token;
 
-  const projectMap = {};
+    const projectMap = {};
 
-  // 1. Scrape directly from open ChatGPT tab sidebar — most reliable for UI state
-  const domProjects = await getProjectsFromContentScript();
-  domProjects.forEach(p => projectMap[p.id] = p);
+    // 1. Scrape directly from open ChatGPT tab sidebar — most reliable for UI state
+    const domProjects = await getProjectsFromContentScript();
+    domProjects.forEach(p => projectMap[p.id] = p);
 
-  // 2. Try API endpoints including paged gizmos
-  if (token) {
-    const apiProjects = await fetchProjects(token);
-    apiProjects.forEach(p => {
-      // Don't overwrite DOM projects (titles are cleaner there)
-      if (!projectMap[p.id]) projectMap[p.id] = p;
-    });
+    // 2. Try API endpoints including paged gizmos
+    if (token) {
+      const apiProjects = await fetchProjects(token);
+      apiProjects.forEach(p => {
+        // Don't overwrite DOM projects (titles are cleaner there)
+        if (!projectMap[p.id]) projectMap[p.id] = p;
+      });
 
-    // 3. Fallback: Detect from conversation gizmo_id metadata
-    try {
-      const data = await chatgptFetch('/conversations?offset=0&limit=100&order=updated', token);
-      const items = data?.items || [];
-      for (const c of items) {
-        const pid = c.gizmo_id || c.workspace_id || c.project_id;
-        if (!pid || !pid.startsWith('g-p-')) continue;
-        if (!projectMap[pid]) {
-          const t = c.workspace_title || c.project_title || pid.replace(/^g-p-[a-f0-9]+-/, '').replace(/-/g, ' ');
-          projectMap[pid] = { id: pid, title: t, gizmoId: pid };
+      // 3. Fallback: Detect from conversation gizmo_id metadata
+      try {
+        const data = await chatgptFetch('/conversations?offset=0&limit=100&order=updated', token);
+        const items = data?.items || [];
+        for (const c of items) {
+          const pid = c.gizmo_id || c.workspace_id || c.project_id;
+          if (!pid || !pid.startsWith('g-p-')) continue;
+          if (!projectMap[pid]) {
+            const t = c.workspace_title || c.project_title || pid.replace(/^g-p-[a-f0-9]+-/, '').replace(/-/g, ' ');
+            projectMap[pid] = { id: pid, title: t, gizmoId: pid };
+          }
         }
-      }
-    } catch (_) {}
-  }
+      } catch (_) {}
+    }
 
-  const merged = Object.values(projectMap);
-  exportState.projects = merged;
-  exportState.projectsLoaded = true;
-  exportState.projectsRaw = { 
-    count: merged.length, 
-    dom: domProjects.length,
-    source: merged.length > 0 ? 'merged' : 'none' 
-  };
-  sendStatus();
-  return merged;
+    const merged = Object.values(projectMap);
+    exportState.projects = merged;
+    exportState.projectsLoaded = true;
+    exportState.projectsRaw = { 
+      count: merged.length, 
+      dom: domProjects.length,
+      source: merged.length > 0 ? 'merged' : 'none' 
+    };
+    sendStatus();
+    return merged;
+  } else {
+    // GEMINI / CLAUDE Sidebar Scraping
+    const domProjects = await getProjectsFromContentScript();
+    const sorted = domProjects.filter(p => !p.id.startsWith('g-p-')); 
+    exportState.projects = sorted;
+    exportState.projectsLoaded = true;
+    sendStatus();
+    return sorted;
+  }
 }
 
 
@@ -411,8 +450,9 @@ async function runExport(options) {
   const scopeTag = options.scope === 'project' ? 'project' :
                    options.scope === 'projects_only' ? 'projects' : 'all';
   const datestamp = new Date().toISOString().slice(0, 10);
-  const isGemini = scope.startsWith('gemini');
-  const prefix = isGemini ? 'gemini' : 'chatgpt';
+  const isGemini = options.scope.startsWith('gemini');
+  const isClaude = options.scope.startsWith('claude');
+  const prefix = isGemini ? 'gemini' : (isClaude ? 'claude' : 'chatgpt');
   const zipFilename = `${prefix}-export-${datestamp}-${scopeTag}.zip`;
 
   exportState = {
@@ -449,35 +489,40 @@ async function runExport(options) {
 
   // 2) Fetch conversation list / Chat data
   try {
-    if (options.scope === 'gemini_current') {
-        const chat = await getGeminiChatFromTab(options.tabId);
+    if (options.scope === 'gemini_current' || options.scope === 'claude_current') {
+        const type = options.scope.split('_')[0]; // gemini or claude
+        const chat = type === 'gemini' ? await getGeminiChatFromTab(options.tabId) : await getClaudeChatFromTab(options.tabId);
+        
         exportState.conversations = [chat];
         exportState.fullConversations = [chat];
         exportState.fetched = 1; exportState.total = 1;
         exportState.phase = 'saving';
         sendStatus();
     } 
-    else if (options.scope === 'gemini_history') {
-        // CRAWLER APPROACH
+    else if (options.scope === 'gemini_history' || options.scope === 'claude_history') {
+        const type = options.scope.split('_')[0];
         exportState.phase = 'fetching_list';
-        const projects = await loadProjects(); // Sidebar discovery
-        const geminiHistory = projects.filter(p => !p.id.startsWith('g-p-')); // Simple filter
-        exportState.total = geminiHistory.length;
+        const projects = await loadProjects(type); 
+        const history = projects.filter(p => p.source === type);
+        
+        exportState.total = history.length;
         exportState.phase = 'fetching_chats';
         sendStatus();
 
-        for (const entry of geminiHistory) {
+        for (const entry of history) {
             try {
-                // Navigate a background tab to the conversation URL
-                const url = `https://gemini.google.com/app/${entry.id}`;
-                const chat = await navigateAndScrapeGemini(url);
+                const url = type === 'gemini' 
+                  ? `https://gemini.google.com/app/${entry.id}`
+                  : `https://claude.ai/chat/${entry.id}`;
+                
+                const chat = type === 'gemini' ? await navigateAndScrapeGemini(url) : await navigateAndScrapeClaude(url);
                 if (chat) exportState.fullConversations.push(chat);
             } catch (e) {
                 exportState.errors.push(`"${entry.title}": ${e.message}`);
             }
             exportState.fetched++;
             sendStatus();
-            await sleep(1500); // Respect Gemini's UI load time
+            await sleep(type === 'gemini' ? 1500 : 2000); 
         }
         exportState.phase = 'saving';
     }
@@ -909,7 +954,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'LOAD_PROJECTS') {
-    loadProjects()
+    loadProjects(msg.platform || 'chatgpt')
       .then(projects => sendResponse({ projects, raw: exportState.projectsRaw }))
       .catch(e => sendResponse({ projects: [], error: e.message }));
     return true;
@@ -967,6 +1012,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (url.includes(DOMAINS.GEMINI)) {
         // Run Gemini single chat export
         runExport({ scope: 'gemini_current', format: 'json', tabId: tabs[0].id });
+      } else if (url.includes(DOMAINS.CLAUDE)) {
+        // Run Claude single chat export
+        runExport({ scope: 'claude_current', format: 'json', tabId: tabs[0].id });
       }
     });
     return true;
