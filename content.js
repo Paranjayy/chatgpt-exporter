@@ -186,14 +186,29 @@
       sendResponse({ token: getAccessToken() });
     }
     if (msg.type === 'GET_PROJECTS_FROM_DOM') {
+      console.log('🧬 [Scanner] Detecting sidebar conversations...');
       const map = {};
+
+      const deepQuerySelectorAll = (selector, root = document) => {
+        const results = Array.from(root.querySelectorAll(selector));
+        const pushResults = (node) => {
+          if (node.shadowRoot) {
+            results.push(...deepQuerySelectorAll(selector, node.shadowRoot));
+          }
+          for (const child of node.children) {
+            pushResults(child);
+          }
+        };
+        pushResults(root === document ? document.body : root);
+        return results;
+      };
+
       if (location.hostname.includes('chatgpt.com')) {
           const dom = getProjectsFromDOM();
           const current = getCurrentProjectFromURL();
           [...dom, ...(current ? [current] : [])].forEach(p => { map[p.id] = p; });
       } else if (location.hostname.includes('gemini.google.com')) {
-          // GEMINI PRECISION RECOVERY
-          const links = document.querySelectorAll('a[data-test-id="conversation"], a[href*="/app/"]');
+          const links = deepQuerySelectorAll('a[data-test-id="conversation"], a[href*="/app/"]');
           links.forEach(a => {
             const href = a.getAttribute('href') || '';
             const match = href.match(/\/app\/([a-z0-9]+)/);
@@ -207,18 +222,23 @@
             }
           });
       } else if (location.hostname.includes('claude.ai')) {
-          // CLAUDE SIDEBAR DISCOVERY
-          const links = document.querySelectorAll('a[href^="/chat/"]');
+          // CLAUDE DEEP SCAN
+          const links = deepQuerySelectorAll('a[href*="/chat/"]');
+          console.log(`🧬 [Scanner] Found ${links.length} potential Claude anchors.`);
           links.forEach(a => {
               const href = a.getAttribute('href') || '';
-              const id = href.split('/').pop();
+              const parts = href.split('/');
+              const id = parts[parts.length - 1];
               const title = a.innerText.trim();
-              if (id && title && title.length > 2) {
+              // Validate ID is a UUID (Clause style) or simple hash
+              if (id && id.length > 5 && title && title.length > 1) {
                   map[id] = { id, title, source: 'claude' };
               }
           });
       }
-      sendResponse({ projects: Object.values(map) });
+      const results = Object.values(map);
+      console.log(`🧬 [Scanner] Identified ${results.length} valid conversations.`);
+      sendResponse({ projects: results });
       return true;
     }
 
