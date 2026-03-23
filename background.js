@@ -351,7 +351,15 @@ async function getTokenFromTab() {
 }
 
 async function fetchConversationList(token, options) {
-   const res = await chatgptFetch('/conversations?offset=0&limit=100&order=updated', token);
+   let url = '/conversations?offset=0&limit=100&order=updated';
+   if (options.scope === 'project' && options.projectId) {
+     url += `&workspace_id=${options.projectId}`;
+   }
+   if (options.scope === 'projects_only') {
+     // For 'Export Projects Only' (all projects), we might need to loop or use a broader query.
+     // For now, we'll fetch general list.
+   }
+   const res = await chatgptFetch(url, token);
    return res?.items || [];
 }
 

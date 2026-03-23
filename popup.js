@@ -329,7 +329,7 @@ btnExport.addEventListener('click', () => {
   chrome.runtime.sendMessage({
     type: 'START_EXPORT',
     options: { 
-      format: format === 'csv' ? 'json' : format, // Fallback for spreadsheet
+      format: format, // Use raw format (csv, md, etc)
       includeAssets, 
       scope: currentScope, 
       projectId, 
