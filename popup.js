@@ -75,6 +75,8 @@ const doneMeta     = document.getElementById('done-meta');
 const doneErrors   = document.getElementById('done-errors');
 const btnExport    = document.getElementById('btn-export');
 const btnRestart   = document.getElementById('btn-restart');
+const btnCancel    = document.getElementById('btn-cancel');
+const statCurrent  = document.getElementById('stat-current');
 const projectPicker  = document.getElementById('project-picker');
 const projectSelect  = document.getElementById('project-select');
 const btnRefresh     = document.getElementById('btn-refresh-projects');
@@ -94,14 +96,22 @@ document.querySelectorAll('.scope-tab').forEach(tab => {
 
     updateExportButtonLabel();
 
+    if (currentScope === 'project' || currentScope.includes('history')) {
+       // Auto-load if switching to a history/project tab
+       if (projectsCache.length === 0) loadProjects();
+    }
+
     if (currentScope === 'project') {
       projectPicker.style.display = 'flex';
-      if (projectsCache.length === 0) loadProjects();
     } else {
       projectPicker.style.display = 'none';
     }
   });
 });
+
+if (btnCancel) btnCancel.onclick = () => {
+   chrome.runtime.sendMessage({ type: 'CANCEL_EXPORT' });
+};
 
 function updateExportButtonLabel() {
   const labels = {
@@ -109,12 +119,12 @@ function updateExportButtonLabel() {
     projects_only: 'Export Projects Only',
     project: 'Export This Project',
     gemini_current: 'Export Current Gemini Chat',
-    gemini_history: 'Export Discovered History',
+    gemini_history: 'Export Entire History',
     claude_current: 'Export Current Claude Chat',
-    claude_history: 'Export Discovered History'
+    claude_history: 'Export Entire History'
   };
   btnExport.innerHTML = `
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
     ${labels[currentScope] || 'Export'}
@@ -128,10 +138,9 @@ async function loadProjects(platform = currentPlatform) {
   try {
     const resp = await chrome.runtime.sendMessage({ type: 'LOAD_PROJECTS', platform });
     projectsCache = resp?.projects || [];
-    if (resp?.raw) log(`ℹ Project API: ${JSON.stringify(resp.raw).slice(0, 120)}`);
     renderProjectOptions();
   } catch (e) {
-    projectSelect.innerHTML = '<option value="">Error loading projects</option>';
+    projectSelect.innerHTML = '<option value="">Error loading list</option>';
     log('⚠ ' + e.message);
   } finally {
     btnRefresh.classList.remove('spinning');
@@ -140,11 +149,11 @@ async function loadProjects(platform = currentPlatform) {
 
 function renderProjectOptions(projects = projectsCache) {
   if (projects.length === 0) {
-    projectSelect.innerHTML = '<option value="">No projects found</option>';
+    projectSelect.innerHTML = '<option value="">Found 0 conversations</option>';
     return;
   }
   projectSelect.innerHTML = projects.map(p =>
-    `<option value="${p.id}">${p.title}</option>`
+    `<option value="${p.id}">${p.title || p.id}</option>`
   ).join('');
 }
 
@@ -176,10 +185,10 @@ function log(text) {
 // ─── Phase labels ─────────────────────────────────────────────────────────────
 const PHASE_LABELS = {
   idle:              'Ready',
-  fetching_projects: 'Loading project list…',
-  fetching_list:     'Fetching conversation list…',
-  fetching_chats:    'Downloading chat messages…',
-  saving:            'Building ZIP file…',
+  fetching_projects: 'Discovery Phase…',
+  fetching_list:     'Fetching List…',
+  fetching_chats:    'Harvesting Messages…',
+  saving:            'Building Pack…',
   done:              'Finished',
 };
 
@@ -191,7 +200,9 @@ let lastErrors  = 0;
 
 function applyStatus(state) {
   if (!state) return;
-  const { running, total, fetched, downloaded, phase, errors, startedAt, finishedAt, projects } = state;
+  const { running, total, fetched, phase, errors, startedAt, finishedAt, projects, currentChatTitle } = state;
+
+  if (currentChatTitle) statCurrent.textContent = currentChatTitle;
 
   // Update projects dropdown if we received them
   if (projects?.length > 0 && projectsCache.length === 0) {

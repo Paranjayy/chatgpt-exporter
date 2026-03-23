@@ -9,12 +9,15 @@ let exportState = {
   startedAt: null,
   finishedAt: null,
   fullConversations: [],
+  currentChatTitle: '',
   zipName: '',
   token: null,
   projects: [],
   projectsRaw: null,
   projectsLoaded: false,
 };
+
+let cancelSignal = false;
 
 function sendStatus() {
   chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', state: exportState });
@@ -26,6 +29,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   
+  if (msg.type === 'CANCEL_EXPORT') {
+    cancelSignal = true;
+    exportState.running = false;
+    exportState.phase = 'idle';
+    exportState.errors.push('Export stopped by user.');
+    sendStatus();
+    sendResponse({ ok: true });
+    return true;
+  }
+  
   if (msg.type === 'LOAD_PROJECTS') {
     loadProjects(msg.platform || 'chatgpt')
       .then(projects => sendResponse({ projects, raw: exportState.projectsRaw }))
@@ -34,6 +47,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'START_EXPORT') {
+    cancelSignal = false;
     startExport(msg.options);
     sendResponse({ started: true });
     return true;
@@ -105,6 +119,7 @@ async function startExport(options) {
     fetched: 0, 
     saved: 0, 
     fullConversations: [],
+    currentChatTitle: '',
     exportFormat: options.format || 'json'
   };
   sendStatus();
@@ -114,25 +129,31 @@ async function startExport(options) {
       // Single Tab Scraping
       let tabId = options.tabId;
       if (tabId === 'active' || tabId === 'current') {
-         // Get the sender's tab if it came from content script, else query active
-         tabId = sender.tab ? sender.tab.id : (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id;
+         tabId = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
       }
-      
       const type = options.scope.split('_')[0];
+      exportState.currentChatTitle = 'Connecting to harvester...';
+      sendStatus();
+
       const chat = type === 'gemini' ? await getGeminiChatFromTab(tabId) : await getClaudeChatFromTab(tabId);
-      if (chat) exportState.fullConversations = [chat];
+      if (chat) {
+        exportState.fullConversations = [chat];
+        exportState.currentChatTitle = chat.title;
+      }
       exportState.total = exportState.fullConversations.length;
-      exportState.phase = 'saving';
     } 
     else if (options.scope.includes('history')) {
       // Bulk Scraping
       const type = options.scope.split('_')[0];
-      const history = exportState.projects.filter(p => p.source === type);
+      const history = exportState.projects.filter(p => !p.source || p.source === type);
       exportState.total = history.length;
       exportState.phase = 'fetching_chats';
       sendStatus();
 
       for (const entry of history) {
+        if (cancelSignal) break;
+        exportState.currentChatTitle = `Scraping: ${entry.title}`;
+        sendStatus();
         try {
           const url = type === 'gemini' ? `https://gemini.google.com/app/${entry.id}` : `https://claude.ai/chat/${entry.id}`;
           const chat = type === 'gemini' ? await navigateAndScrapeGemini(url) : await navigateAndScrapeClaude(url);
@@ -142,13 +163,12 @@ async function startExport(options) {
         }
         exportState.fetched++;
         sendStatus();
-        await sleep(6000); 
+        await sleep(type === 'claude' ? 8000 : 5000); 
       }
-      exportState.phase = 'saving';
     } else {
       // ChatGPT Standard (API)
       const token = exportState.token || await getTokenFromTab();
-      if (!token && options.scope !== 'project') throw new Error('No ChatGPT authentication token found. Please open ChatGPT.');
+      if (!token && options.scope !== 'project') throw new Error('No ChatGPT authentication token found. Please open/refresh ChatGPT tab.');
       
       const convs = await fetchConversationList(token, options);
       exportState.total = convs.length;
@@ -156,6 +176,9 @@ async function startExport(options) {
       sendStatus();
 
       for (const conv of convs) {
+        if (cancelSignal) break;
+        exportState.currentChatTitle = `Downloading: ${conv.title}`;
+        sendStatus();
         try {
            const full = await chatgptFetch(`/conversation/${conv.id}`, token);
            exportState.fullConversations.push(full);
@@ -164,12 +187,11 @@ async function startExport(options) {
         }
         exportState.fetched++;
         sendStatus();
-        await sleep(200);
+        await sleep(Math.random() * 200 + 100);
       }
-      exportState.phase = 'saving';
     }
 
-    await finalizeZip(options);
+    if (!cancelSignal) await finalizeZip(options);
   } catch (e) {
     exportState.errors.push('Export Failed: ' + e.message);
     exportState.running = false;
@@ -182,32 +204,36 @@ async function finalizeZip(options) {
   exportState.phase = 'saving';
   sendStatus();
 
-  const files = [];
+  const convs = exportState.fullConversations;
   const fmt = exportState.exportFormat;
   const zipName = `export-${new Date().toISOString().split('T')[0]}.${fmt}.zip`;
 
-  // Format conversations
-  for (const chat of exportState.fullConversations) {
-    const safeTitle = (chat.title || 'chat').replace(/[^a-z0-9]/gi, '_').slice(0, 50);
-    if (fmt === 'json') {
-      files.push({ name: `${safeTitle}.json`, content: JSON.stringify(chat, null, 2) });
-    } else if (fmt === 'md') {
-      files.push({ name: `${safeTitle}.md`, content: formatToMarkdown(chat) });
-    } else if (fmt === 'html') {
-      files.push({ name: `${safeTitle}.html`, content: formatToHTML(chat) });
+  if (convs.length === 1 && !options.includeAssets) {
+     const chat = convs[0];
+     let content, ext;
+     if (fmt === 'json') { content = JSON.stringify(chat, null, 2); ext = 'json'; }
+     else if (fmt === 'md') { content = formatToMarkdown(chat); ext = 'md'; }
+     else if (fmt === 'html') { content = formatToHTML(chat); ext = 'html'; }
+     else if (fmt === 'csv') { content = formatToCSV(chat); ext = 'csv'; }
+     
+     const dataUrl = `data:text/${ext === 'json' ? 'json' : ext};base64,` + btoa(unescape(encodeURIComponent(content)));
+     chrome.downloads.download({ url: dataUrl, filename: `${safeFilename(chat.title || 'chat')}.${ext}` });
+  } else {
+    const files = [];
+    for (const chat of convs) {
+      if (cancelSignal) break;
+      const safeTitle = safeFilename(chat.title || 'chat');
+      if (fmt === 'json') files.push({ name: `${safeTitle}.json`, content: JSON.stringify(chat, null, 2) });
+      else if (fmt === 'md') files.push({ name: `${safeTitle}.md`, content: formatToMarkdown(chat) });
+      else if (fmt === 'html') files.push({ name: `${safeTitle}.html`, content: formatToHTML(chat) });
+      else if (fmt === 'csv') files.push({ name: `${safeTitle}.csv`, content: formatToCSV(chat) });
+      exportState.saved++;
+      sendStatus();
     }
-    exportState.saved++;
-    sendStatus();
+    await createZipViaOffscreen(files, zipName);
+    exportState.zipName = zipName;
   }
-
-  // Handle Assets if requested
-  if (options.includeAssets) {
-    // ... Asset logic would go here
-  }
-
-  await createZipViaOffscreen(files, zipName);
   
-  exportState.zipName = zipName;
   exportState.running = false;
   exportState.phase = 'done';
   exportState.finishedAt = Date.now();
@@ -219,7 +245,6 @@ function formatToMarkdown(chat) {
   let md = `# ${chat.title || 'Chat'}\n\n`;
   const msgs = chat.mapping ? Object.values(chat.mapping).filter(n => n.message).map(n => n.message) : chat.messages;
   if (!msgs) return md;
-  
   for (const m of msgs) {
     const role = (m.author?.role || m.role || 'user').toUpperCase();
     const text = m.content?.parts?.join('\n') || m.text || '';
@@ -229,56 +254,71 @@ function formatToMarkdown(chat) {
 }
 
 function formatToHTML(chat) {
-  const safeTitle = chat.title || 'Chat';
+  const safeTitle = escHtml(chat.title || 'Chat');
   let html = `<html><head><title>${safeTitle}</title><style>body{font-family:sans-serif;max-width:800px;margin:2em auto;line-height:1.6;background:#111;color:#eee}.msg{margin:1em 0;padding:1.5em;border-radius:12px;border:1px solid #333}.user{background:#1a1a1a}.assistant{background:#222;border-color:#10a37f}</style></head><body><h1>${safeTitle}</h1>`;
   const msgs = chat.mapping ? Object.values(chat.mapping).filter(n => n.message).map(n => n.message) : chat.messages;
   if (msgs) {
     for (const m of msgs) {
       const role = m.author?.role || m.role || 'user';
       const text = m.content?.parts?.join('<br>') || m.text || '';
-      html += `<div class="msg ${role}"><strong>${role.toUpperCase()}</strong><p>${text.replace(/\n/g, '<br>')}</p></div>`;
+      html += `<div class="msg ${role}"><strong>${role.toUpperCase()}</strong><p>${escHtml(text).replace(/\n/g, '<br>')}</p></div>`;
     }
   }
   html += `</body></html>`;
   return html;
 }
 
+function formatToCSV(chat) {
+  let csv = "Role,Content\n";
+  const msgs = chat.mapping ? Object.values(chat.mapping).filter(n => n.message).map(n => n.message) : chat.messages;
+  if (msgs) {
+    for (const m of msgs) {
+      const role = (m.author?.role || m.role || 'user').toUpperCase();
+      const text = (m.content?.parts?.join('\n') || m.text || '').replace(/"/g, '""');
+      csv += `"${role}","${text}"\n`;
+    }
+  }
+  return csv;
+}
+
 // ─── Nav Scraper Helpers ──────────────────────────────────────────────────────
 async function navigateAndScrapeClaude(url) {
   const tab = await chrome.tabs.create({ url, active: false });
-  await sleep(8000); 
+  await sleep(10000); 
   try {
     const r = await chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_CLAUDE_CHAT' });
-    chrome.tabs.remove(tab.id);
-    if (!r?.messages) throw new Error('No content found');
+    if (tab.id) chrome.tabs.remove(tab.id);
+    if (!r?.messages || r.messages.length === 0) throw new Error('Harvester returned 0 messages.');
     return { title: r.title, messages: r.messages };
   } catch (e) {
-    chrome.tabs.remove(tab.id);
+    if (tab.id) chrome.tabs.remove(tab.id);
     throw e;
   }
 }
 
 async function navigateAndScrapeGemini(url) {
   const tab = await chrome.tabs.create({ url, active: false });
-  await sleep(6000);
+  await sleep(8000);
   try {
     const r = await chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_GEMINI_CHAT' });
-    chrome.tabs.remove(tab.id);
-    if (!r?.messages) throw new Error('No content found');
+    if (tab.id) chrome.tabs.remove(tab.id);
+    if (!r?.messages || r.messages.length === 0) throw new Error('Harvester returned 0 messages.');
     return { title: r.title, messages: r.messages };
   } catch (e) {
-    chrome.tabs.remove(tab.id);
+    if (tab.id) chrome.tabs.remove(tab.id);
     throw e;
   }
 }
 
 async function getClaudeChatFromTab(tabId) {
   const r = await chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_CLAUDE_CHAT' });
+  if (!r?.messages) throw new Error('Claude Harvester failed');
   return { title: r.title, messages: r.messages };
 }
 
 async function getGeminiChatFromTab(tabId) {
   const r = await chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_GEMINI_CHAT' });
+  if (!r?.messages) throw new Error('Gemini Harvester failed');
   return { title: r.title, messages: r.messages };
 }
 
@@ -307,6 +347,8 @@ async function chatgptFetch(path, token) {
   return res.json();
 }
 
-async function fetchProjects(token) { return []; } // Simplified
+async function fetchProjects(token) { return []; } 
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function safeFilename(s) { return String(s).replace(/[^a-zA-Z0-9\-_ ]/g,'_').replace(/\s+/g,'_').slice(0,80); }
