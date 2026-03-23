@@ -17,40 +17,60 @@ async function detectPlatform() {
     document.body.dataset.platform = 'gemini';
     if (platformNameEl) platformNameEl.textContent = 'Gemini';
     if (noticeEl) noticeEl.textContent = '⚠️ Scrapes Gemini live chats & sidebar history';
-    
-    // Enable Gemini history discovery
+
     tabs[0].textContent = 'Current Chat';
     tabs[0].dataset.scope = 'gemini_current';
-    tabs[1].textContent = 'Discovered History';
+    tabs[1].textContent = 'All History';
     tabs[1].dataset.scope = 'gemini_history';
     tabs[1].style.display = 'block';
-    tabs[2].style.display = 'none'; 
-    
+    tabs[2].style.display = 'none';
+    tabs[3].style.display = 'none';
+
     currentScope = 'gemini_current';
     updateExportButtonLabel();
-    loadProjects('gemini'); 
+    loadProjects('gemini');
+
   } else if (tab.url.includes('claude.ai')) {
     currentPlatform = 'claude';
     document.body.dataset.platform = 'claude';
     if (platformNameEl) platformNameEl.textContent = 'Claude';
     if (noticeEl) noticeEl.textContent = '⚠️ Scrapes Claude live chats & sidebar history';
-    
-    // Enable Claude history discovery
+
     tabs[0].textContent = 'Current Chat';
     tabs[0].dataset.scope = 'claude_current';
-    tabs[1].textContent = 'Discovered History';
+    tabs[1].textContent = 'All History';
     tabs[1].dataset.scope = 'claude_history';
     tabs[1].style.display = 'block';
-    tabs[2].style.display = 'none'; 
-    
+    tabs[2].style.display = 'none';
+    tabs[3].style.display = 'none';
+
     currentScope = 'claude_current';
     updateExportButtonLabel();
     loadProjects('claude');
+
   } else {
+    // ChatGPT — remap tab labels; inject a "Current Chat" tab as first option
     currentPlatform = 'chatgpt';
     document.body.dataset.platform = 'chatgpt';
     if (platformNameEl) platformNameEl.textContent = 'ChatGPT';
     if (noticeEl) noticeEl.innerHTML = '⚠️ Must be logged into <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>';
+
+    // If we're on a specific chat URL, show a "Current Chat" tab
+    if (tab.url && tab.url.match(/chatgpt\.com\/c\/[a-f0-9-]+/)) {
+      tabs[0].textContent = 'Current Chat';
+      tabs[0].dataset.scope = 'chatgpt_current';
+      tabs[0].classList.add('active');
+      tabs[1].textContent = 'All History';
+      tabs[1].dataset.scope = 'all';
+      tabs[1].classList.remove('active');
+      tabs[1].style.display = 'block';
+      tabs[2].textContent = 'Projects';
+      tabs[2].dataset.scope = 'projects_only';
+      tabs[2].style.display = 'block';
+      tabs[3].style.display = 'block';
+      currentScope = 'chatgpt_current';
+      updateExportButtonLabel();
+    }
   }
 }
 
@@ -129,14 +149,15 @@ if (btnCancel) btnCancel.onclick = () => {
 
 function updateExportButtonLabel() {
   const labels = {
+    chatgpt_current: 'Export Current Chat',
     all: 'Export All Chats',
-    projects_only: 'Export Projects Only',
+    projects_only: 'Export All Projects',
     project: 'Export This Project',
     gemini_current: 'Export Current Gemini Chat',
-    gemini_history: 'Export Entire History',
+    gemini_history: 'Export Entire Gemini History',
     claude_current: 'Export Current Claude Chat',
-    claude_history: 'Export Entire History',
-    custom: 'Export Selected Individual'
+    claude_history: 'Export Entire Claude History',
+    custom: 'Export Selected Chats',
   };
   btnExport.innerHTML = `
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -245,13 +266,15 @@ function applyStatus(state) {
     const elapsed = ((finishedAt || Date.now()) - startedAt) / 1000;
     const errCount = errors?.length || 0;
     doneMeta.innerHTML = `
-      <strong>${total}</strong> conversations &middot; <strong>${elapsed.toFixed(1)}s</strong>
-      ${state.zipName ? `<br><code style="font-size:11px;color:#10a37f">${state.zipName}</code>` : ''}
-      ${errCount > 0 ? `<br><span style="color:#e55353">⚠ ${errCount} warning${errCount>1?'s':''}</span>` : ''}
+      <strong>${total}</strong> conversation${total !== 1 ? 's' : ''} &middot; <strong>${elapsed.toFixed(1)}s</strong>
+      ${state.zipName ? `<br><code style="font-size:11px;color:#10a37f;display:inline-block;margin-top:4px;">${state.zipName}</code>` : ''}
+      ${errCount > 0 ? `<br><span style="color:#e55353;font-size:11px;">⚠ ${errCount} warning${errCount > 1 ? 's' : ''}</span>` : ''}
     `;
     if (errCount > 0) {
       doneErrors.style.display = 'block';
-      doneErrors.textContent = errors.slice(0, 15).join('\n');
+      doneErrors.textContent = errors.slice(0, 20).join('\n');
+    } else {
+      doneErrors.style.display = 'none';
     }
     return;
   }
