@@ -223,13 +223,13 @@
     }
 
     if (msg.type === 'SCRAPE_GEMINI_CHAT' || msg.type === 'SCRAPE_CLAUDE_CHAT') {
+      console.log(`🧬 [Scraper] Starting ${msg.type}...`);
       const messages = [];
       const now = Date.now() / 1000;
       const isClaude = location.hostname.includes('claude.ai');
       
-      // Selectors for both Claude and Gemini
       const selectors = isClaude 
-        ? '.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .message-content'
+        ? '.font-claude-message, [data-testid="message-content"], .grid-cols-1.gap-2, .message-content, .bg-bg-200'
         : '.query-text, .user-query, .message-content, .model-response-text, .inline-answer, [role="article"], .prompt-content, .response-content';
       
       const allPossible = document.querySelectorAll(selectors);
@@ -243,9 +243,9 @@
         let isAssistant = false;
 
         if (isClaude) {
-            // Claude uses specific background colors or structural hints for User vs Assistant
+            // Claude: User uses bg-bg-200/300, Assistant uses font-claude-message or specific model classes
             isUser = el.closest('.bg-bg-200, .bg-bg-300') || el.matches('.bg-bg-200, .bg-bg-300');
-            isAssistant = el.closest('.font-claude-message') || !isUser;
+            isAssistant = el.closest('.font-claude-message') || (!isUser && text.length > 10);
         } else {
             isUser = el.classList.contains('query-text') || 
                        el.classList.contains('user-query') ||
@@ -272,38 +272,24 @@
              role: isUser ? 'user' : 'assistant',
              text: text,
              images: Array.from(el.querySelectorAll('img')).map(i => i.src).filter(s => s.startsWith('http')),
-             // INCREMENTAL TIMESTAMP TO PREVENT COLLISION
-             created: now + (idx * 0.001) 
+             created: now + (idx * 0.01) 
            });
         }
       });
 
-      // STRICT DEDUPLICATION
+      // DEDUPLICATE (Claude React sometimes doubles refs)
       const finalMessages = [];
       const seen = new Set();
       messages.forEach(m => {
-          const clean = m.text.replace(/\s+/g, ' ').trim();
-          if (!seen.has(clean)) {
+          const key = m.role + m.text.slice(0, 100);
+          if (!seen.has(key)) {
               finalMessages.push(m);
-              seen.add(clean);
+              seen.add(key);
           }
       });
 
-      sendResponse({ 
-        chat: {
-          id: 'gemini-' + (location.pathname.split('/').pop() || Date.now()),
-          title: document.title.replace(' - Gemini', '') || 'Gemini Chat',
-          mapping: finalMessages.map((m, i) => ({
-            id: i,
-            message: {
-                author: { role: m.role },
-                content: { parts: [m.text], images: m.images || [] },
-                create_time: m.created
-            }
-          })),
-          create_time: now
-        }
-      });
+      console.log(`🧬 [Scraper] Found ${finalMessages.length} messages.`);
+      sendResponse({ messages: finalMessages });
     }
     return true;
   });
